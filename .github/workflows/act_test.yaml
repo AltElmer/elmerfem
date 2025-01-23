@@ -47,8 +47,7 @@ jobs:
           brew update
           brew install --overwrite python@3.12 python@3.13
           brew reinstall gcc
-          brew install \
-            cmake libomp openblas open-mpi
+          brew install make openblas
           echo "HOMEBREW_PREFIX=$(brew --prefix)" >> $GITHUB_ENV
       - name: configure
         env:
@@ -64,10 +63,6 @@ jobs:
             -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/usr" \
             -DBLA_VENDOR="OpenBLAS" \
             -DCMAKE_PREFIX_PATH="${HOMEBREW_PREFIX}/opt/libomp;${HOMEBREW_PREFIX}/opt/openblas;${HOMEBREW_PREFIX}/opt/qt;${HOMEBREW_PREFIX}/opt/qwt" \
-            -DWITH_OpenMP=ON \
-            -DOpenMP_C_FLAGS="-Xclang -fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include" \
-            -DOpenMP_CXX_FLAGS="-Xclang -fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include" \
-            -DOpenMP_Fortran_FLAGS="-fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include" \
             -DWITH_LUA=ON \
             -DWITH_MPI=ON \
             -DMPI_TEST_MAXPROC=2 \
