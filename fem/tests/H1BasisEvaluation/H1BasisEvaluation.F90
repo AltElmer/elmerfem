@@ -262,7 +262,8 @@ CONTAINS
 #else
       ! Block over Gauss points
         t_start_tmp=ftimer()
-        print*,rep, ll, nbasisvec
+        nbasisvec = 0
+        ndbasisdxvec = 0
         CALL H1Basis_LineNodal(ngp, UWrk, SIZE(BasisBlk,2), BasisVec, nbasisvec)
 !       CALL H1Basis_dLineNodalng, UWrk, SIZE(dBasisdxBlk,2), dBasisdxBlk, ndbasisdxvec)
         t_totvec_n=t_totvec_n+(ftimer()-t_start_tmp)
