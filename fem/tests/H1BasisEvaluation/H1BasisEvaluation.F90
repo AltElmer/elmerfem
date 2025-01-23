@@ -255,7 +255,7 @@ CONTAINS
         BasisVec(ll:lln,1:nbasisvec)=BasisBlk(1:ncl,1:nbasisvec)
         dBasisdxVec(ll:lln,1:ndbasisdxvec,1:3)=dBasisdxBlk(1:ncl,1:ndbasisdxvec,1:3)
             if ( rep==10 .and. ngp==6 .and. nbasisvec==10 ) then
-                    print*, 'basis', basis(5,3), basisvec(5,3)
+                    print*, 'basis', basis(5,3), basisvec(5,3), Basisblk(5,3)
              end if
       END DO
     END DO
