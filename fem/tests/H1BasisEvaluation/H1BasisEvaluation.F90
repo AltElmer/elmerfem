@@ -263,14 +263,14 @@ CONTAINS
       ! Block over Gauss points
         t_start_tmp=ftimer()
         print*,rep, ll, nbasisvec
-        CALL H1Basis_LineNodal(ng, UWrk, SIZE(BasisBlk,2), BasisVec, nbasisvec)
+        CALL H1Basis_LineNodal(ngp, UWrk, SIZE(BasisBlk,2), BasisVec, nbasisvec)
 !       CALL H1Basis_dLineNodalng, UWrk, SIZE(dBasisdxBlk,2), dBasisdxBlk, ndbasisdxvec)
         t_totvec_n=t_totvec_n+(ftimer()-t_start_tmp)
 
         IF (P > 1) THEN
           t_start_tmp=ftimer()
           DO perm=1,BubblePerm
-            CALL H1Basis_LineBubbleP(ng, UWrk, P, SIZE(BasisBlk,2), BasisVec, nbasisvec, Invert(perm))
+            CALL H1Basis_LineBubbleP(ngp, UWrk, P, SIZE(BasisBlk,2), BasisVec, nbasisvec, Invert(perm))
 !           CALL H1Basis_dLineBubbleP(ncl, UBlk, P, SIZE(dBasisdxBlk,2), dBasisdxBlk, ndbasisdxvec, &
 !                   Invert(perm))
           END DO
