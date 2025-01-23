@@ -73,7 +73,7 @@ jobs:
             -DMPI_TEST_MAXPROC=2 \
             -DWITH_Zoltan=OFF \
             -DWITH_Mumps=OFF \
-            -DWITH_CHOLMOD=ON \
+            -DWITH_CHOLMOD=OFF \
             -DWITH_ElmerIce=OFF \
             -DWITH_ELMERGUI=OFF \
             -DWITH_QT6=OFF \
