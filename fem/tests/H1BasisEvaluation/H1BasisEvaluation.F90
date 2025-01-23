@@ -230,8 +230,10 @@ CONTAINS
         lln = MIN(ll+VECTOR_BLOCK_LENGTH-1,ngp)
         ncl = lln-ll+1
         UBlk(1:ncl)=UWrk(ll:lln)
-        
+        print*,'ublk: ', ublk
+
         t_start_tmp=ftimer()
+        print*,rep, ll, nbasisvec
         CALL H1Basis_LineNodal(ncl, UBlk, SIZE(BasisBlk,2), BasisBlk, nbasisvec)
         CALL H1Basis_dLineNodal(ncl, UBlk, SIZE(dBasisdxBlk,2), dBasisdxBlk, ndbasisdxvec)
         t_totvec_n=t_totvec_n+(ftimer()-t_start_tmp)
@@ -239,9 +241,12 @@ CONTAINS
         IF (P > 1) THEN
           t_start_tmp=ftimer()
           DO perm=1,BubblePerm
+        print*,rep, ll, perm, nbasisvec
             CALL H1Basis_LineBubbleP(ncl, UBlk, P, SIZE(BasisBlk,2), BasisBlk, nbasisvec, Invert(perm))
             CALL H1Basis_dLineBubbleP(ncl, UBlk, P, SIZE(dBasisdxBlk,2), dBasisdxBlk, ndbasisdxvec, &
                     Invert(perm))
+        print*,rep, ll, perm, nbasisvec
+        print*,'+'
           END DO
           t_totvec_b=t_totvec_b+(ftimer()-t_start_tmp)
         END IF
@@ -1788,6 +1793,9 @@ CONTAINS
       DO i=1,ngp
         thiserr = ABS(Basis1(i,j)-Basis2(i,j))
         maxerr = MAX(maxerr,thiserr)
+          if  ( j>=3 .and. i>=5 .and. ngp == 6 .and. nbasis==10 .and. ndim == 1) then
+          WRITE (*,*) 'Basis:', i,j,Basis1(i,j), Basis2(i,j), thiserr
+          end if
         IF( thiserr >= tol ) THEN
           nerror = nerror + 1
           WRITE (*,*) 'Basis:', i,j,Basis1(i,j), Basis2(i,j), thiserr
