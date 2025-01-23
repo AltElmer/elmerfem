@@ -1,6 +1,6 @@
 name: act_test
 on:
-  workflow_dispatch: act_test
+  workflow_dispatch:
   push:
     paths-ignore:
       - '**.nix'
