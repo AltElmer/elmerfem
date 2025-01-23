@@ -223,11 +223,12 @@ CONTAINS
     t_totvec_b = REAL(0,dp)
     t_startvec = ftimer()
     DO rep=1,NREP
+#if 0
       ! Block over Gauss points
       DO ll=1,ngp,VECTOR_BLOCK_LENGTH
         nbasisvec = 0
         ndbasisdxvec = 0
-
+ 
         lln = MIN(ll+VECTOR_BLOCK_LENGTH-1,ngp)
         ncl = lln-ll+1
         UBlk(1:ncl)=UWrk(ll:lln)
@@ -258,6 +259,25 @@ CONTAINS
                     print*, 'basis', basis(5,3), basisvec(5,3), Basisblk(5,3)
              end if
       END DO
+#else
+      ! Block over Gauss points
+        t_start_tmp=ftimer()
+        print*,rep, ll, nbasisvec
+        CALL H1Basis_LineNodal(ng, UWrk, SIZE(BasisBlk,2), BasisVec, nbasisvec)
+!       CALL H1Basis_dLineNodalng, UWrk, SIZE(dBasisdxBlk,2), dBasisdxBlk, ndbasisdxvec)
+        t_totvec_n=t_totvec_n+(ftimer()-t_start_tmp)
+
+        IF (P > 1) THEN
+          t_start_tmp=ftimer()
+          DO perm=1,BubblePerm
+            CALL H1Basis_LineBubbleP(ng, UWrk, P, SIZE(BasisBlk,2), BasisVec, nbasisvec, Invert(perm))
+!           CALL H1Basis_dLineBubbleP(ncl, UBlk, P, SIZE(dBasisdxBlk,2), dBasisdxBlk, ndbasisdxvec, &
+!                   Invert(perm))
+          END DO
+          t_totvec_b=t_totvec_b+(ftimer()-t_start_tmp)
+        END IF
+      dbasisdx = 0; dbasisdxvec=0
+#endif
     END DO
     t_endvec = ftimer()
 
