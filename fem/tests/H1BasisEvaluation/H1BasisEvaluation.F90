@@ -215,6 +215,7 @@ CONTAINS
     t_end = ftimer()
     
     ! Initialize arrays
+    Ublk = 0
     BasisVec = 0
     dBasisdxVec = 0
 
