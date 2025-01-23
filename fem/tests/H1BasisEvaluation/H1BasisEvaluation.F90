@@ -231,7 +231,7 @@ CONTAINS
         lln = MIN(ll+VECTOR_BLOCK_LENGTH-1,ngp)
         ncl = lln-ll+1
         UBlk(1:ncl)=UWrk(ll:lln)
-        print*,'ublk: ', ublk
+        print*,'ublk: ', ublk(1:ncl)
 
         t_start_tmp=ftimer()
         print*,rep, ll, nbasisvec
@@ -254,6 +254,9 @@ CONTAINS
 
         BasisVec(ll:lln,1:nbasisvec)=BasisBlk(1:ncl,1:nbasisvec)
         dBasisdxVec(ll:lln,1:ndbasisdxvec,1:3)=dBasisdxBlk(1:ncl,1:ndbasisdxvec,1:3)
+            if ( rep==10 .and. ngp==6 .and. nbasisvec==10 ) then
+                    print*, 'basis', basis(5,3), basisvec(5,3)
+             end if
       END DO
     END DO
     t_endvec = ftimer()
