@@ -288,8 +288,7 @@ CONTAINS
             t_tot_n, t_tot_b, t_end-t_start, &
             t_totvec_n, t_totvec_b, t_endvec-t_startvec)
 
-    nerror = TestBasis(ngp, nbasis, Element % TYPE % DIMENSION, Basis, BasisVec, &
-            dBasisdx, dBasisdxVec, tol)
+    nerror = TestBasis(ngp, nbasis, 1, Basis, BasisVec, dBasisdx, dBasisdxVec, tol)
 
     CALL DeallocatePElement(Element)
     DEALLOCATE(Basis, dBasisdx, BasisVec, dBasisdxVec, UWrk, VWrk, WWrk, UBlk, VBlk, WBlk, &
