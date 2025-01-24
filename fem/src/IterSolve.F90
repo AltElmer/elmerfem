@@ -115,9 +115,9 @@ CONTAINS
 #endif
 
 
-function yyyy( n, x, istride, y, ystride ) result(dot)
+function yyyy( n, x, xstride, y, ystride ) result(dot)
         integer :: n, xstride, ystride
-        real(kind=dp) :: x(*), y(*), ddot
+        real(kind=dp) :: x(*), y(*), dot
         dot = sum(x(1:n)*y(1:n))
 end function yyyy
 function xxxx( n, x, istride) result(nrm)
