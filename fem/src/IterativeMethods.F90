@@ -884,7 +884,7 @@ CONTAINS
           rnrm = normfun(n, work(1,r), 1 )
 
           IF (rnrm /= rnrm) THEN
-                  print*,bnrm, rnrm, sum(work(1,r)), r, size(work,2)
+                  print*,bnrm, rnrm, sum(work(1:n,r)), r, size(work,2)
             CALL Fatal( 'RealBiCGStab(l)', 'Breakdown error: rnrm == NaN.' )
           ENDIF
 
