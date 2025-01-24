@@ -61,9 +61,9 @@ jobs:
         # CHOLMOD and rocALUTION require a working OpenMP package. So, disable them for clang.
         run: |
           # work around error in the rocALUTION CMake config file distributed by Ubuntu
-          if [ "${{ matrix.compiler }}" == "gcc" ] && [ "${{ matrix.mpi }}" == "with" ]; then
-            sudo sed -i '/find_dependency(HIP)/d' /usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)/cmake/rocalution/rocalution-config.cmake
-          fi
+#         if [ "${{ matrix.compiler }}" == "gcc" ] && [ "${{ matrix.mpi }}" == "with" ]; then
+#           sudo sed -i '/find_dependency(HIP)/d' /usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)/cmake/rocalution/rocalution-config.cmake
+#         fi
           mkdir ${GITHUB_WORKSPACE}/build
           cd ${GITHUB_WORKSPACE}/build
           cmake \
