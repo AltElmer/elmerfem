@@ -104,7 +104,7 @@ jobs:
         run: |
           cd ${GITHUB_WORKSPACE}/build
           ctest . \
-            -R HeatControlExplicit \
+            -LE slow \
             -j$(nproc) \
             --timeout 300
 
