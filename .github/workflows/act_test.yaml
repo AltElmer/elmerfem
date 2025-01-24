@@ -55,7 +55,9 @@ jobs:
       - name: install dependencies
         run: |
           sudo apt -qq update
-          sudo apt install -y ${{ matrix.compiler-pkgs }} cmake gfortran libopenblas-dev
+          sudo apt install -y ${{ matrix.compiler-pkgs }} cmake gfortran \
+            libopenblas-dev libopenmpi-dev
+
 
       - name: configure
         # CHOLMOD and rocALUTION require a working OpenMP package. So, disable them for clang.
