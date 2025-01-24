@@ -1,4 +1,4 @@
-name: build
+name: act_test
 on:
   workflow_dispatch:
   push:
@@ -10,7 +10,7 @@ on:
       - '**.nix'
       - 'flake.lock'
 
-concurrency: ci-ubuntu-${{ github.ref }}
+concurrency: act_test-${{ github.ref }}
 
 jobs:
 
