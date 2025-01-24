@@ -923,11 +923,14 @@ end function xxxx
             dotProc = AddrFunc( PseudoZDotProd2 )             
           END IF
         ELSE        
-          IF ( dotProc  == 0 ) dotProc = AddrFunc(yyyy)
+          IF ( dotProc  == 0 ) dotProc = AddrFunc(ddot)
         END IF
         IF ( normProc == 0 ) normproc = AddrFunc(xxxx)
         IF( HUTI_DBUGLVL == 0) HUTI_DBUGLVL = HUGE( HUTI_DBUGLVL )        
       END IF
+
+!       IF ( dotProc  == 0 ) dotProc = AddrFunc(yyyy)
+        IF ( normProc == 0 ) normproc = AddrFunc(xxxx)
       
     ELSE
       HUTI_NDIM = HUTI_NDIM / 2
