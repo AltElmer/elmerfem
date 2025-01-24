@@ -118,7 +118,7 @@ CONTAINS
 function xxxx( n, x, istride) result(nrm)
         integer :: n, istride
         real(kind=dp) :: x(*), nrm
-        xxx = sqrt( sum(x(1:n)**2) )
+        nrm = sqrt( sum(x(1:n)**2) )
 end function xxxx
 
 !------------------------------------------------------------------------------

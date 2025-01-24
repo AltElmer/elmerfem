@@ -230,7 +230,7 @@ CONTAINS
         lln = MIN(ll+VECTOR_BLOCK_LENGTH-1,ngp)
         ncl = lln-ll+1
         UBlk(1:ncl)=UWrk(ll:lln)
-        
+
         t_start_tmp=ftimer()
         CALL H1Basis_LineNodal(ncl, UBlk, SIZE(BasisBlk,2), BasisBlk, nbasisvec)
         CALL H1Basis_dLineNodal(ncl, UBlk, SIZE(dBasisdxBlk,2), dBasisdxBlk, ndbasisdxvec)
