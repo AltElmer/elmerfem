@@ -65,7 +65,7 @@ jobs:
           mkdir ${GITHUB_WORKSPACE}/build
           cd ${GITHUB_WORKSPACE}/build
           cmake \
-            -DCMAKE_BUILD_TYPE="RelWithDebInfo" \
+            -DCMAKE_BUILD_TYPE="Release" \
             -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/usr" \
             -DBLA_VENDOR="Generic" \
             ${{ matrix.openmp-cmake-flags }} \
