@@ -67,7 +67,7 @@ jobs:
           cmake \
             -DCMAKE_BUILD_TYPE="RelWithDebInfo" \
             -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/usr" \
-            -DBLA_VENDOR="OpenBLAS" \
+            -DBLA_VENDOR="Generic" \
             ${{ matrix.openmp-cmake-flags }} \
             -DWITH_LUA=ON \
             $([ "${{ matrix.mpi }}" == "with" ] && echo "-DWITH_Zoltan=OFF" || echo "-DWITH_Zoltan=OFF") \
