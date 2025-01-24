@@ -223,7 +223,7 @@ CONTAINS
     t_totvec_b = REAL(0,dp)
     t_startvec = ftimer()
     DO rep=1,NREP
-#if 0
+#if 1
       ! Block over Gauss points
       DO ll=1,ngp,VECTOR_BLOCK_LENGTH
         nbasisvec = 0

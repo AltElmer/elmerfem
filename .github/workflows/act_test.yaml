@@ -57,7 +57,7 @@ jobs:
           mkdir ${GITHUB_WORKSPACE}/build
           cd ${GITHUB_WORKSPACE}/build
           cmake \
-            -DCMAKE_BUILD_TYPE="Release" \
+            -DCMAKE_BUILD_TYPE="RelWithDebInfo" \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
             -DCMAKE_Fortran_COMPILER=gfortran \
