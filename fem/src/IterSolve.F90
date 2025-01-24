@@ -1,4 +1,4 @@
-!/*****************************************************************************/
+*****************************************************************************/
 ! *
 ! *  Elmer, A Finite Element Software for Multiphysical Problems
 ! *
@@ -115,6 +115,11 @@ CONTAINS
 #endif
 
 
+function yyyy( n, x, istride, y, ystride ) result(dot)
+        integer :: n, xstride, ystride
+        real(kind=dp) :: x(*), y(*), ddot
+        dot = sqrt( sum(x(1:n),y(1:n)) )
+end function yyyy
 function xxxx( n, x, istride) result(nrm)
         integer :: n, istride
         real(kind=dp) :: x(*), nrm
@@ -918,7 +923,7 @@ end function xxxx
             dotProc = AddrFunc( PseudoZDotProd2 )             
           END IF
         ELSE        
-          IF ( dotProc  == 0 ) dotProc = AddrFunc(ddot)
+          IF ( dotProc  == 0 ) dotProc = AddrFunc(yyyy)
         END IF
         IF ( normProc == 0 ) normproc = AddrFunc(xxxx)
         IF( HUTI_DBUGLVL == 0) HUTI_DBUGLVL = HUGE( HUTI_DBUGLVL )        
