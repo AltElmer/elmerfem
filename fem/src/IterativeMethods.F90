@@ -881,7 +881,7 @@ CONTAINS
           CALL C_matvec( t, work(1,r+k), ipar, matvecsubr )
 
           ! rnrm = normfun(n, work(1:n,r), 1 )
-          rnrm = normfun(n, work(1,r), 1 )
+          rnrm = normfun(n, work(1:n,r), 1 )
 
           IF (rnrm /= rnrm) THEN
                   print*,bnrm, rnrm, sum(work(1:n,r)), r, size(work,2)
