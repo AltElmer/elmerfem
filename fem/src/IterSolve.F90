@@ -118,7 +118,7 @@ CONTAINS
 function yyyy( n, x, istride, y, ystride ) result(dot)
         integer :: n, xstride, ystride
         real(kind=dp) :: x(*), y(*), ddot
-        dot = sqrt( sum(x(1:n),y(1:n)) )
+        dot = sum(x(1:n)*y(1:n))
 end function yyyy
 function xxxx( n, x, istride) result(nrm)
         integer :: n, istride
