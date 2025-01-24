@@ -56,7 +56,7 @@ jobs:
         run: |
           sudo apt -qq update
           sudo apt install -y ${{ matrix.compiler-pkgs }} cmake gfortran \
-            libopenblas-dev libopenmpi-dev
+            libblas-dev liblapack-dev libopenmpi-dev
 
 
       - name: configure
