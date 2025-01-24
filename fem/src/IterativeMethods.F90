@@ -762,6 +762,7 @@ CONTAINS
       bnrm  = normfun(n, b(1), 1 )
       rnrm0 = normfun(n, work(1,r), 1 )
       rnrm0 = sqrt(sum(work(1:n,r)**2))
+      rnrm0 = normfun(n, work(1:n,r), 1 )
 
       !-------------------------------------------------------------------
       ! Check whether the initial guess is already converged, diverged or NaN
