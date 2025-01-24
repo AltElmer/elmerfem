@@ -712,8 +712,8 @@ MODULE LoadMod
 
             INTEGER(KIND=AddrInt) :: fptr
             REAL(KIND=dp), DIMENSION(:) CONTIG :: x,b
-            INTEGER :: ipar(50)
-            REAL(KIND=dp) :: dpar(50)
+            INTEGER :: ipar(*)
+            REAL(KIND=dp) :: dpar(*)
             REAL(KIND=dp) :: work(:,:)
             INTEGER(KIND=Addrint) :: mvptr, pcondptr, pcondrptr, &
                                      dotptr, normptr, stopcptr
@@ -724,8 +724,8 @@ MODULE LoadMod
                     USE, INTRINSIC :: ISO_C_BINDING
                     INTEGER(CAddrInt) :: fptr
                     REAL(C_DOUBLE) :: x(*), b(*)
-                    INTEGER(C_INT) :: ipar(50)
-                    REAL(C_DOUBLE) :: dpar(50)
+                    INTEGER(C_INT) :: ipar(*)
+                    REAL(C_DOUBLE) :: dpar(*)
                     REAL(C_DOUBLE) :: work(*)
                     INTEGER(CAddrInt) :: mvptr, pcondptr, pcondrptr, dotptr, &
                                      normptr, stopcptr

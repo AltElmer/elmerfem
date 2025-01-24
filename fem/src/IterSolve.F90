@@ -114,6 +114,13 @@ CONTAINS
 #define HUTI_IDRS_S ipar(18)
 #endif
 
+
+function xxxx( n, x, istride) result(nrm)
+        integer :: n, istride
+        real(kind=dp) :: x(*), nrm
+        xxx = sqrt( sum(x(1:n)**2) )
+end function xxxx
+
 !------------------------------------------------------------------------------
 !> Dummy preconditioner, if linear system scaling is active this corresponds
 !> to diagonal preconditioning.
@@ -913,7 +920,7 @@ CONTAINS
         ELSE        
           IF ( dotProc  == 0 ) dotProc = AddrFunc(ddot)
         END IF
-        IF ( normProc == 0 ) normproc = AddrFunc(dnrm2)
+        IF ( normProc == 0 ) normproc = AddrFunc(xxxx)
         IF( HUTI_DBUGLVL == 0) HUTI_DBUGLVL = HUGE( HUTI_DBUGLVL )        
       END IF
       
