@@ -882,7 +882,7 @@ CONTAINS
 
           ! rnrm = normfun(n, work(1:n,r), 1 )
           rnrm = normfun(n, work(1:n,r), 1 )
-          rnrm = sqrt(work(1:n,r)*work(1:n,r))
+          rnrm = sqrt(sum(work(1:n,r)*work(1:n,r)))
 
           IF (rnrm /= rnrm) THEN
                   print*,bnrm, rnrm, sum(work(1:n,r)), n, size(work,1), r, size(work,2)
