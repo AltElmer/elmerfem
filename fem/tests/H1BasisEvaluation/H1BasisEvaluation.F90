@@ -264,19 +264,21 @@ CONTAINS
         t_start_tmp=ftimer()
         nbasisvec = 0
         ndbasisdxvec = 0
-        CALL H1Basis_LineNodal(ngp, UWrk, SIZE(BasisBlk,2), BasisVec, nbasisvec)
+        CALL H1Basis_LineNodal(ngp, UWrk, SIZE(BasisBlk,2), BasisBlk, nbasisvec)
 !       CALL H1Basis_dLineNodalng, UWrk, SIZE(dBasisdxBlk,2), dBasisdxBlk, ndbasisdxvec)
         t_totvec_n=t_totvec_n+(ftimer()-t_start_tmp)
 
         IF (P > 1) THEN
           t_start_tmp=ftimer()
           DO perm=1,BubblePerm
-            CALL H1Basis_LineBubbleP(ngp, UWrk, P, SIZE(BasisBlk,2), BasisVec, nbasisvec, Invert(perm))
+            CALL H1Basis_LineBubbleP(ngp, UWrk, P, SIZE(BasisBlk,2), BasisBlk, nbasisvec, Invert(perm))
 !           CALL H1Basis_dLineBubbleP(ncl, UBlk, P, SIZE(dBasisdxBlk,2), dBasisdxBlk, ndbasisdxvec, &
 !                   Invert(perm))
           END DO
           t_totvec_b=t_totvec_b+(ftimer()-t_start_tmp)
         END IF
+        basisvec(1:ngp,1:nbasisvec) = BasisBlk(1:ngp,1:nbasisvec)
+      ndbasisdxvec = nbasisvec
       dbasisdx = 0; dbasisdxvec=0
 #endif
     END DO
