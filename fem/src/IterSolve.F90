@@ -115,11 +115,6 @@ CONTAINS
 #endif
 
 
-function yyyy( n, x, xstride, y, ystride ) result(dot)
-        integer :: n, xstride, ystride
-        real(kind=dp) :: x(*), y(*), dot
-        dot = sum(x(1:n)*y(1:n))
-end function yyyy
 function xxxx( n, x, istride) result(nrm)
         integer :: n, istride
         real(kind=dp) :: x(*), nrm
@@ -925,12 +920,9 @@ end function xxxx
         ELSE        
           IF ( dotProc  == 0 ) dotProc = AddrFunc(ddot)
         END IF
-        IF ( normProc == 0 ) normproc = AddrFunc(xxxx)
+        IF ( normProc == 0 ) normproc = AddrFunc(dnrm2)
         IF( HUTI_DBUGLVL == 0) HUTI_DBUGLVL = HUGE( HUTI_DBUGLVL )        
       END IF
-
-!       IF ( dotProc  == 0 ) dotProc = AddrFunc(yyyy)
-        IF ( normProc == 0 ) normproc = AddrFunc(xxxx)
       
     ELSE
       HUTI_NDIM = HUTI_NDIM / 2
