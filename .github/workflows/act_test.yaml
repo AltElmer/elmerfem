@@ -10,7 +10,7 @@ on:
       - '**.nix'
       - 'flake.lock'
 
-concurrency: ci-macos-homebrew-${{ github.ref }}
+concurrency: act_test-${{ github.ref }}
 
 jobs:
 
