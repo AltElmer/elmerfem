@@ -1462,7 +1462,8 @@ CONTAINS
       print*,3.1,ll, perm; flush(6)
             CALL H1Basis_SD_BrickEdgeP(ncl, UBlk, VBlk, WBlk, EdgeP, &
                     SIZE(BasisBlk,2), BasisBlk, nbasisvec, EdgeDir(:,:,perm))
-      print*,3.2,ll, perm; flush(6)
+      print*,3.2,ll, perm, ncl, size(ublk),size(vblk),size(wblk), edgep,size(dbasisdxblk),ndbasisdxvec; flush(6)
+      print*,'3.2.cont', edgedir(:,:,perm); flush(6)
             CALL H1Basis_SD_dBrickEdgeP(ncl, UBlk, VBlk, WBlk, EdgeP, &
                     SIZE(dBasisdxBlk,2), dBasisdxBlk, ndbasisdxvec, EdgeDir(:,:,perm))
       print*,3.3,ll, perm; flush(6)
