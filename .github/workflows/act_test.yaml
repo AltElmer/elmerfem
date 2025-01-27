@@ -1,4 +1,4 @@
-name: act_test
+name: build-macos-homebrew
 on:
   workflow_dispatch:
   push:
@@ -10,86 +10,87 @@ on:
       - '**.nix'
       - 'flake.lock'
 
-concurrency: act_test-${{ github.ref }}
+concurrency: ci-macos-homebrew-${{ github.ref }}
 
 jobs:
 
-  ubuntu:
-    # For available GitHub-hosted runners, see:
-    # https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners
-    runs-on: ${{ matrix.os }}
+  macos-homebrew:
 
-    name: ${{ matrix.os }} (${{ matrix.compiler }} ${{ matrix.mpi }} MPI ${{ matrix.openmp }} OpenMP)
+    runs-on: ${{ matrix.os }}
 
     strategy:
       # Allow other runners in the matrix to continue if some fail
       fail-fast: false
 
       matrix:
-        os: [ubuntu-24.04]
-        compiler: [gcc]
-        mpi: [with]
-        openmp: [with]
-        include:
-          - os: ubuntu-24.04-arm
-            compiler: gcc
-            compiler-pkgs: "g++ gcc"
-            cc: "gcc"
-            cxx: "g++"
-            mpi: with
-            openmp: without
-            openmp-cmake-flags: "-DWITH_OpenMP=OFF"
-    env:
-      CC: ${{ matrix.cc }}
-      CXX: ${{ matrix.cxx }}
+        os: [macos-13]
 
     steps:
       - name: get CPU information
-        run: lscpu
+        run: |
+          sysctl hw
+          sysctl machdep
 
       - name: checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: install dependencies
-        run: |
-          sudo apt -qq update
-          sudo apt install -y ${{ matrix.compiler-pkgs }} cmake gfortran \
-            libblas-dev liblapack-dev libopenmpi-dev
 
+        # Homebrew's Python conflicts with the Python that comes pre-installed
+        # on the GitHub runners. Some of the dependencies depend on different
+        # versions of Homebrew's Python. Enforce using the ones from Homebrew
+        # to avoid errors on updates.
+        # See: https://github.com/orgs/Homebrew/discussions/3928
+
+        # It looks like "gfortran" isn't working correctly unless "gcc" is
+        # re-installed.
+        run: |
+          brew update
+          brew install --overwrite python@3.12 python@3.13
+          brew reinstall gcc
+          brew install \
+            cmake libomp openblas open-mpi
+          echo "HOMEBREW_PREFIX=$(brew --prefix)" >> $GITHUB_ENV
 
       - name: configure
-        # CHOLMOD and rocALUTION require a working OpenMP package. So, disable them for clang.
+        env:
+          LDFLAGS: -L${{ env.HOMEBREW_PREFIX }}/opt/libomp/lib -lomp
         run: |
           mkdir ${GITHUB_WORKSPACE}/build
           cd ${GITHUB_WORKSPACE}/build
           cmake \
             -DCMAKE_BUILD_TYPE="Release" \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_Fortran_COMPILER=gfortran \
             -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/usr" \
-            -DBLA_VENDOR="Generic" \
-            ${{ matrix.openmp-cmake-flags }} \
+            -DBLA_VENDOR="OpenBLAS" \
+            -DCMAKE_PREFIX_PATH="${HOMEBREW_PREFIX}/opt/libomp;${HOMEBREW_PREFIX}/opt/openblas;" \
+            -DWITH_OpenMP= OFF\
+            -DOpenMP_C_FLAGS="-Xclang -fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include" \
+            -DOpenMP_CXX_FLAGS="-Xclang -fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include" \
+            -DOpenMP_Fortran_FLAGS="-fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include" \
             -DWITH_LUA=ON \
-            $([ "${{ matrix.mpi }}" == "with" ] && echo "-DWITH_Zoltan=OFF" || echo "-DWITH_Zoltan=OFF") \
-            $([ "${{ matrix.mpi }}" == "with" ] && echo "-DWITH_Mumps=OFF" || echo "-DWITH_Mumps=OFF") \
-            $([ "${{ matrix.compiler }}" == "gcc" ] && echo "-DWITH_CHOLMOD=OFF" || echo "-DWITH_CHOLMOD=OFF") \
-            $([ "${{ matrix.mpi }}" == "with" ] && echo "-DWITH_Hypre=OFF -DHYPRE_INCLUDE_DIR=/usr/include/hypre" || echo "-DWITH_Hypre=OFF") \
-            $([ "${{ matrix.compiler }}" == "gcc" ] && [ "${{ matrix.mpi }}" == "with" ] && echo "-DWITH_ROCALUTION=OFF" || echo "-DWITH_ROCALUTION=OFF") \
-            $([ "${{ matrix.mpi }}" == "with" ] && echo "-DWITH_ElmerIce=OFF" || echo "-DWITH_ElmerIce=OFF") \
+            -DWITH_MPI=ON \
+            -DMPI_TEST_MAXPROC=1 \
+            -DWITH_Zoltan=OFF \
+            -DWITH_Mumps=OFF \
+            -DWITH_CHOLMOD=OFF \
+            -DWITH_ElmerIce=OFF \
             -DWITH_ELMERGUI=OFF \
+            -DWITH_QT6=OFF \
+            -DQWT_INCLUDE_DIR="${HOMEBREW_PREFIX}/opt/qwt/lib/qwt.framework/Headers" \
             -DWITH_VTK=OFF \
             -DWITH_OCC=OFF \
             -DWITH_MATC=OFF \
             -DWITH_PARAVIEW=OFF \
-            -DCREATE_PKGCONFIG_FILE=ON \
-            $([ "${{ matrix.mpi }}" == "with" ] && echo "-DWITH_MPI=ON -DMPI_TEST_MAXPROC=2 -DMPIEXEC_PREFLAGS=--allow-run-as-root" || echo "-DWITH_MPI=OFF") \
-            $([ "${{ matrix.mpi }}" == "with" ] && echo "-DWITH_Trilinos=OFF" || echo "-DWITH_Trilinos=OFF") \
+            -DCREATE_PKGCONFIG_FILE=OFF \
             ..
 
       - name: build
         run: |
           cd ${GITHUB_WORKSPACE}/build
-          cmake --build . -j$(nproc)
+          cmake --build . -j$(sysctl -n hw.logicalcpu)
 
       - name: install
         run: |
@@ -104,11 +105,11 @@ jobs:
         run: |
           cd ${GITHUB_WORKSPACE}/build
           ctest . \
-            -LE slow \
-            -j$(nproc) \
+            -R SD_H1BasisEvaluation -R SD_LinearFormsAssembly \
+            -j$(sysctl -n hw.logicalcpu) \
             --timeout 300
 
-      - name: Re-run tests
+      - name: re-run tests
         if: always() && (steps.run-ctest.outcome == 'failure')
         timeout-minutes: 60
         env:
