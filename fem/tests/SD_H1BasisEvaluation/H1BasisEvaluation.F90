@@ -1295,7 +1295,7 @@ CONTAINS
     nbasis = nndof + 12*nedof*EdgePerm + 6*nfdof*FacePerm + nbdof
     ngp = GP % N
 
-    print*,ngb,nbasis; flush(6)
+    print*,ngp,nbasis; flush(6)
 
     ! Reserve workspace for finite element basis
     ALLOCATE(Basis(ngp,nbasis), dBasisdx(ngp,nbasis,3), &
