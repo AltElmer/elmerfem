@@ -1459,10 +1459,13 @@ CONTAINS
         IF (P > 1) THEN
           t_start_tmp=ftimer()
           DO perm=1,EdgePerm
+      print*,3.1,ll, perm; flush(6)
             CALL H1Basis_SD_BrickEdgeP(ncl, UBlk, VBlk, WBlk, EdgeP, &
                     SIZE(BasisBlk,2), BasisBlk, nbasisvec, EdgeDir(:,:,perm))
+      print*,3.2,ll, perm; flush(6)
             CALL H1Basis_SD_dBrickEdgeP(ncl, UBlk, VBlk, WBlk, EdgeP, &
                     SIZE(dBasisdxBlk,2), dBasisdxBlk, ndbasisdxvec, EdgeDir(:,:,perm))
+      print*,3.3,ll, perm; flush(6)
           END DO
           t_totvec_e=t_totvec_e+(ftimer()-t_start_tmp)
         END IF
