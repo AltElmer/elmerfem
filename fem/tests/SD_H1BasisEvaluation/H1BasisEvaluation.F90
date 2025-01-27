@@ -1435,10 +1435,11 @@ CONTAINS
     t_totvec_f = REAL(0,dp)
     t_totvec_b = REAL(0,dp)
     t_startvec = ftimer()
-    print*,'gov ec '; flush(6)
+    print*,'go vec '; flush(6)
     DO rep=1,NREP
       ! Block over Gauss points
       DO ll=1,ngp,VECTOR_BLOCK_LENGTH
+      print*,1,ll; flush(6)
         nbasisvec = 0
         ndbasisdxvec = 0
 
@@ -1447,12 +1448,14 @@ CONTAINS
         UBlk(1:ncl)=UWrk(ll:lln)
         VBlk(1:ncl)=VWrk(ll:lln)
         WBlk(1:ncl)=WWrk(ll:lln)
+      print*,2,ll; flush(6)
         
         t_start_tmp=ftimer()
         CALL H1Basis_BrickNodal(ncl, UBlk, VBlk, WBlk, SIZE(BasisBlk,2), BasisBlk, nbasisvec)
         CALL H1Basis_dBrickNodal(ncl, UBlk, VBlk, WBlk, SIZE(dBasisdxBlk,2), dBasisdxBlk, ndbasisdxvec)
         t_totvec_n=t_totvec_n+(ftimer()-t_start_tmp)
 
+      print*,3,ll; flush(6)
         IF (P > 1) THEN
           t_start_tmp=ftimer()
           DO perm=1,EdgePerm
@@ -1463,6 +1466,7 @@ CONTAINS
           END DO
           t_totvec_e=t_totvec_e+(ftimer()-t_start_tmp)
         END IF
+      print*,4,ll; flush(6)
 
         IF (P > 3) THEN
           t_start_tmp=ftimer()
@@ -1475,6 +1479,7 @@ CONTAINS
           t_totvec_f=t_totvec_f+(ftimer()-t_start_tmp)
         END IF
 
+      print*,5,ll; flush(6)
         IF (P > 5) THEN
           t_start_tmp=ftimer()
           CALL H1Basis_SD_BrickBubbleP(ncl, UBlk, VBlk, WBlk, P, &
@@ -1487,6 +1492,7 @@ CONTAINS
         BasisVec(ll:lln,1:nbasisvec)=BasisBlk(1:ncl,1:nbasisvec)
         dBasisdxVec(ll:lln,1:ndbasisdxvec,1:3)=dBasisdxBlk(1:ncl,1:ndbasisdxvec,1:3)
       END DO
+      print*,6,ll; flush(6)
     END DO
     t_endvec = ftimer()
     print*,'done vec '; flush(6)
