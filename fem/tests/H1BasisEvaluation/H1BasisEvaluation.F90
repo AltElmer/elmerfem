@@ -142,9 +142,8 @@ CONTAINS
             t_tot_b, t_totvec_b
     LOGICAL :: Invert(BubblePerm)
 
-! remove these for the time being as they seem to be a source of miscompilation of the code ...
-!xDIRx ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
-!xDIRx ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
 
     nerror = 0
     Element => AllocatePElement(Solver % Mesh, 202, P)
@@ -293,8 +292,8 @@ CONTAINS
                BubbleDir(H1Basis_MaxPElementFaceNodes, &
                        BubblePerm)
     LOGICAL :: InvertEdge(3, EdgePerm)
-!xDIRx ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
-!xDIRx ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
 
     nerror = 0
     Element => AllocatePElement(Solver % Mesh, 303, P)
@@ -526,8 +525,8 @@ CONTAINS
                        EdgePerm), EdgeP(H1Basis_MaxPElementEdges),&
                BubbleDir(H1Basis_MaxPElementFaceNodes,BubblePerm)
     LOGICAL :: InvertEdge(4, EdgePerm)
-!xDIRx ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
-!xDIRx ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
 
     nerror = 0
     Element => AllocatePElement(Solver % Mesh, 404, P)
@@ -761,8 +760,8 @@ CONTAINS
                        H1Basis_MaxPElementFaces, &
                        FacePerm), FaceP(H1Basis_MaxPElementFaces), &
                TetraType(H1Basis_MaxPElementEdges, EdgePerm)
-!xDIRx ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
-!xDIRx ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
 
     nerror = 0
     Element => AllocatePElement(Solver % Mesh, 504, P)
@@ -995,8 +994,8 @@ CONTAINS
                        FacePerm), FaceP(H1Basis_MaxPElementFaces)
     INTEGER :: direction(H1Basis_MaxPElementFaceNodes), tmp
     LOGICAL :: InvertEdge(9, EdgePerm), invert
-!xDIRx ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
-!xDIRx ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
     
     nerror = 0
     Element => AllocatePElement(Solver % Mesh, 706, P)
@@ -1275,8 +1274,8 @@ CONTAINS
                        FacePerm), FaceP(H1Basis_MaxPElementFaces)
     INTEGER :: direction(H1Basis_MaxPElementFaceNodes), tmp
     LOGICAL :: InvertEdge(9, EdgePerm), invert
-!xDIRx ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
-!xDIRx ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
     
     nerror = 0
     Element => AllocatePElement(Solver % Mesh, 605, P)
@@ -1550,8 +1549,8 @@ CONTAINS
                        H1Basis_MaxPElementFaces, &
                        FacePerm), FaceP(H1Basis_MaxPElementFaces)
     LOGICAL :: InvertEdge(12, EdgePerm)
-!xDIRx ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
-!xDIRx ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: Basis, dBasisdx, BasisVec, dBasisdxVec, BasisBlk, dBasisdxBlk
+!DIR$ ATTRIBUTES ALIGN:64 :: UWrk, VWrk, WWrk, UBlk, VBlk, WBlk
 
     nerror = 0
     Element => AllocatePElement(Solver % Mesh, 808, P)
