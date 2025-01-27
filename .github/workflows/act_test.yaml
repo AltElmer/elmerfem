@@ -37,8 +37,8 @@ jobs:
             cc: "gcc"
             cxx: "g++"
             mpi: with
-            openmp: without
-            openmp-cmake-flags: "-DWITH_OpenMP=OFF"
+            openmp: with
+            openmp-cmake-flags: "-DWITH_OpenMP=ON"
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
