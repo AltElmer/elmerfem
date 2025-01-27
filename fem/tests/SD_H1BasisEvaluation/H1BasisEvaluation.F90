@@ -1295,6 +1295,8 @@ CONTAINS
     nbasis = nndof + 12*nedof*EdgePerm + 6*nfdof*FacePerm + nbdof
     ngp = GP % N
 
+    print*,ngb,nbasis; flush(6)
+
     ! Reserve workspace for finite element basis
     ALLOCATE(Basis(ngp,nbasis), dBasisdx(ngp,nbasis,3), &
             BasisVec(ngp,nbasis), dBasisdxVec(ngp,nbasis,3), &
@@ -1310,6 +1312,9 @@ CONTAINS
               'Storage allocation for local element basis failed')
     END IF
     
+
+    print*,'are we here?'; flush(6)
+
     ! Copy Gauss points to local arrays
     UWrk(1:ngp) = GP % U(1:ngp)
     VWrk(1:ngp) = GP % V(1:ngp)
@@ -1339,6 +1344,8 @@ CONTAINS
 
     EdgeP = P
     FaceP = P
+
+    print*,'go for it'; flush(6)
 
     t_tot_n = REAL(0,dp)
     t_tot_e = REAL(0,dp)
@@ -1416,6 +1423,7 @@ CONTAINS
         t_tot_b=t_tot_b+(ftimer()-t_start_tmp)
       END IF
     END DO
+    print*,'done basic '; flush(6)
     t_end = ftimer()
     
     ! Initialize arrays
@@ -1427,6 +1435,7 @@ CONTAINS
     t_totvec_f = REAL(0,dp)
     t_totvec_b = REAL(0,dp)
     t_startvec = ftimer()
+    print*,'gov ec '; flush(6)
     DO rep=1,NREP
       ! Block over Gauss points
       DO ll=1,ngp,VECTOR_BLOCK_LENGTH
@@ -1480,17 +1489,21 @@ CONTAINS
       END DO
     END DO
     t_endvec = ftimer()
+    print*,'done vec '; flush(6)
 
     CALL PrintTestData(Element, ngp, nrep, 12*nedof+6*nfdof+nbdof, &
             t_tot_n, t_tot_e+t_tot_f+t_tot_b, t_end-t_start, &
             t_totvec_n, t_totvec_e+t_totvec_f+t_totvec_b, t_endvec-t_startvec)
 
+    print*,'done print '; flush(6)
     nerror = TestBasis(ngp, nbasis, Element % TYPE % DIMENSION, Basis, BasisVec, &
             dBasisdx, dBasisdxVec, tol)
+    print*,'done test '; flush(6)
 
     CALL DeallocatePElement(Element)
     DEALLOCATE(Basis, dBasisdx, BasisVec, dBasisdxVec, UWrk, VWrk, WWrk, UBlk, VBlk, WBlk, &
           BasisBlk, dBasisdxBlk)
+    print*,'done  '; flush(6)
   END FUNCTION TestBrickElement
 
   FUNCTION TestBasis(ngp, nbasis, ndim, Basis1, Basis2, dBasisdx1, dBasisdx2, tol) RESULT(nerror)
