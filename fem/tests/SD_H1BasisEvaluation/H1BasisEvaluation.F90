@@ -37,6 +37,7 @@ SUBROUTINE H1BasisEvaluation( Model,Solver,dt,TransientSimulation )
     INTEGER, PARAMETER :: MaxP = 6
     nerror = 0
 
+    print*,'1d'; flush(6)
     ! 1D tests
     DO P=1,MaxP
       netest = TestLineElement(Solver, tol1d, P)
@@ -47,6 +48,7 @@ SUBROUTINE H1BasisEvaluation( Model,Solver,dt,TransientSimulation )
       nerror = nerror + netest
     END DO
     
+    print*,'2d'; flush(6)
     ! 2D tests 
     DO P=1,MaxP
       netest = TestTriangleElement(Solver, tol2d, P, .FALSE.)
@@ -57,6 +59,7 @@ SUBROUTINE H1BasisEvaluation( Model,Solver,dt,TransientSimulation )
     END DO
 
     ! 2D element in a 3D mesh
+    print*,'23d'; flush(6)
     DO P=1,MaxP
       netest = TestTriangleElement(Solver, tol2d, P, .TRUE.)
       IF (netest /= 0) THEN
@@ -65,6 +68,7 @@ SUBROUTINE H1BasisEvaluation( Model,Solver,dt,TransientSimulation )
       nerror = nerror + netest
     END DO
     
+    print*,'q'; flush(6)
     DO P=1,MaxP
       netest = TestQuadElement(Solver, tol2d, P, .FALSE.)
       IF (netest /= 0) THEN
@@ -73,6 +77,7 @@ SUBROUTINE H1BasisEvaluation( Model,Solver,dt,TransientSimulation )
       nerror = nerror + netest
     END DO
 
+    print*,'qf'; flush(6)
     ! 2D element in a 3D mesh
     DO P=1,MaxP
       netest = TestQuadElement(Solver, tol2d, P, .TRUE.)
@@ -82,6 +87,7 @@ SUBROUTINE H1BasisEvaluation( Model,Solver,dt,TransientSimulation )
       nerror = nerror + netest
     END DO
 
+    print*,'t'; flush(6)
     ! 3D tests
     DO P=1,MaxP
       netest = TestTetraElement(Solver, tol3d, P)
@@ -91,6 +97,7 @@ SUBROUTINE H1BasisEvaluation( Model,Solver,dt,TransientSimulation )
       nerror = nerror + netest
     END DO
 
+    print*,'w'; flush(6)
     DO P=1,MaxP
       netest = TestWedgeElement(Solver, tol3d, P)
       IF (netest /= 0) THEN
@@ -99,6 +106,7 @@ SUBROUTINE H1BasisEvaluation( Model,Solver,dt,TransientSimulation )
       nerror = nerror + netest
     END DO
 
+    print*,'b'; flush(6)
     DO P=1,MaxP
       netest = TestBrickElement(Solver, tol3d, P)
       IF (netest /= 0) THEN
@@ -106,10 +114,13 @@ SUBROUTINE H1BasisEvaluation( Model,Solver,dt,TransientSimulation )
       END IF
       nerror = nerror + netest
     END DO
+    print*,'done'; flush(6)
 
+    print*,1,nerror; flush(6)
     ! Build solution norm for error checking
     Solver % Variable % Norm = REAL(1+nerror,dp)
     Solver % Variable % Values = REAL(1+nerror,dp)
+    print*,'done'; flush(6)
     
 CONTAINS
 
