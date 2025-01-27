@@ -105,7 +105,7 @@ jobs:
         run: |
           cd ${GITHUB_WORKSPACE}/build
           ctest . \
-            -R SD_H1BasisEvaluation -R SD_LinearFormsAssembly \
+            -R SD_H1BasisEvaluation \
             -j$(sysctl -n hw.logicalcpu) \
             --timeout 300
 
