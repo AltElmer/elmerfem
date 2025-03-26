@@ -131,14 +131,22 @@ CONTAINS
        IF(.NOT. ASSOCIATED(Perm)) THEN
          CALL Fatal('ParallelInitMatrix','Cannot initialize matrix without Perm vector!')
        END IF
-       
 
+       IF ( ASSOCIATED(Matrix % Solver) ) THEN
+         IF(ASSOCIATED(Matrix % Solver % Variable)) THEN
+           DOFs =  Matrix % Solver % Variable % DOFs
+           Perm => Matrix % Solver % Variable % Perm
+         END IF
+       END IF
+       
        n = SIZE(Perm)
        k = n*DOFs + Matrix % ExtraDOFs
 
        i = 0
        IF(ASSOCIATED( Matrix % Perm) ) i=i+1
        IF(ASSOCIATED( Matrix % InvPerm) ) i=i+1
+
+       print*,'KKK: ', parenv % mype, n, k, i, matrix % extradofs, matrix % numberofrows
 
        IF(i==1) THEN
          CALL Fatal('ParallelInitMatrix','Only Perm or InvPerm is associated!')
@@ -147,6 +155,7 @@ CONTAINS
          CALL Info('ParallelInitMatrix','Skipping generation of Perm and InvPerm',Level=20)
          GOTO 1
        END IF
+
 
        j = MAXVAL(Perm)*DOFs + Matrix % ExtraDOFs
        ALLOCATE( Matrix % Perm(k), Matrix % InvPerm(j))
@@ -208,6 +217,7 @@ CONTAINS
 
               Matrix % ParallelInfo % GlobalDOFs(k) = &
                 DOFs*(Mesh % ParallelInfo % GlobalDOFs(i)-1)+j
+
               Matrix % ParallelInfo % GInterface(k) = &
                 Mesh % ParallelInfo % GInterface(i)
 
@@ -400,7 +410,8 @@ CONTAINS
              ELSE
                ALLOCATE(Matrix % ParallelInfo % NeighbourList(i) % Neighbours(ParEnv % PEs))
                l = 0
-               DO k=ParEnv % PEs,1,-1
+!              DO k=ParEnv % PEs,1,-1
+               DO k=1,ParEnv % PEs
                  l = l + 1
                  Matrix % ParallelInfo % NeighbourList(i) % Neighbours(l)=k-1
                END DO

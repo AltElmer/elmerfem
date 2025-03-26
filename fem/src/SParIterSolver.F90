@@ -1364,8 +1364,10 @@ END SUBROUTINE ZeroSplittedMatrix
     !
     ! Set up the preconditioner:
     ! --------------------------
-    IF ( .NOT.SPlittedMatrix % InsideMatrix % Ordered ) &
-       CALL CRS_SortMatrix( SplittedMatrix % InsideMatrix )
+    IF ( SplittedMatrix % InsideMatrix % NumberOFrows > 0 ) THEN
+      IF ( .NOT.SPlittedMatrix % InsideMatrix % Ordered ) &
+         CALL CRS_SortMatrix( SplittedMatrix % InsideMatrix )
+    END IF
 !----------------------------------------------------------------------
   END SUBROUTINE SParInitSolve
 !----------------------------------------------------------------------
@@ -1386,12 +1388,12 @@ END SUBROUTINE ZeroSplittedMatrix
 !----------------------------------------------------------------------
     SplittedMatrix => SourceMatrix % ParMatrix % SplittedMatrix
 
+    print*,parenv % mype, 'eh : ', splittedmatrix % insidematrix % numberofrows, &
+            associated(splittedmatrix % insidematrix % rhs)
     IF (.NOT. ASSOCIATED(SplittedMatrix % InsideMatrix % RHS)) &
-         ALLOCATE(SplittedMatrix % InsideMatrix % RHS(SplittedMatrix % InsideMatrix % NumberOfRows))
+     ALLOCATE(SplittedMatrix % InsideMatrix % RHS(SplittedMatrix % InsideMatrix % NumberOfRows))
     TmpRHSVec => SplittedMatrix % InsideMatrix % RHS
-
-    CALL ExchangeRHSIf( SourceMatrix, SplittedMatrix, &
-            ParallelInfo, RHSVec, TmpRHSVec )
+    CALL ExchangeRHSIf( SourceMatrix, SplittedMatrix, ParallelInfo, RHSVec, TmpRHSVec )
 !----------------------------------------------------------------------
   END SUBROUTINE SParUpdateRHS
 !----------------------------------------------------------------------
