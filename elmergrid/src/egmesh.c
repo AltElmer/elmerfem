@@ -10179,6 +10179,7 @@ int BoundingBox(struct FemType *data,int nomesh,int nomeshes,int info)
     zmax = MAX( zmax, data->z[i] );
     zmin = MIN( zmin, data->z[i] );
   }
+  sidemax = 0.0;
   sidemax = MAX(xmax-xmin,ymax-ymin);
   sidemax = MAX(sidemax,zmax-zmin);
 
@@ -10189,12 +10190,12 @@ int BoundingBox(struct FemType *data,int nomesh,int nomeshes,int info)
     printf("Bounding box of all nodes in mesh:\n");
   }
 
-  printf("X:[%g,%g] ",xmin,xmax);
-  printf("Y:[%g,%g] ",ymin,ymax);
-  printf("Z:[%g,%g]\n",zmin,zmax);
+  printf("X:[%lg,%lg] ",xmin,xmax);
+  printf("Y:[%lg,%lg] ",ymin,ymax);
+  printf("Z:[%lg,%lg]\n",zmin,zmax);
 
   if(sidemax > 49.9)  {
-    printf("\nNotice: the longest bounding box side length of [%g] is greater than 50.\n",sidemax);
+    printf("\nNotice: the longest bounding box side length of [%lg] is greater than 50.\n",sidemax);
     printf("ElmerGUI includes a library of material properties, defined in SI units.  If using ElmerGUI, \n");
     printf("then the geometry is expected to have meters as length.  Geometry that exceeds 50 meters \n");
     printf("in length or width or height may not be intended.  Many Geometry generators assume \n");

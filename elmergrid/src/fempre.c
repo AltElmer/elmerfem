@@ -132,6 +132,15 @@ int main(int argc, char *argv[])
   inmethod = eg.inmethod;
   outmethod = eg.outmethod;
 
+  if(eg.nooverwrite && !eg.filerenamed) {
+    if( eg.partitions == 1 || eg.metis == 1 ) {
+      if(inmethod == outmethod) {
+	printf("Nothing to do, one partition, same input/output format and no overwriting allowed!\n");
+	Goodbye();
+	return(0);
+      }
+    }
+  }
 
  read_another_file:    
 
@@ -694,14 +703,12 @@ int main(int argc, char *argv[])
       if(info) printf("One Metis partition requested, enforcing serial mode\n");
       eg.metis = 0;
     }
-
     if( eg.partitions == 1 ) {
       if(!eg.connect) {
 	if(info) printf("One geometric partition requested, enforcing serial mode\n");
 	eg.partitions = 0;
       }
     }
-
 
     partoptim = eg.partoptim;
     partbcoptim = eg.partbcoptim;
