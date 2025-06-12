@@ -258,11 +258,11 @@ CONTAINS
        CALL MPI_COMM_RANK( ELMER_COMM_WORLD, ParEnv % MyPE, ierr )
        OutputPE = ParEnv % MyPe
 
-       WRITE( Message, * ) 'Initialize #PEs: ', ParEnv % PEs
-       CALL Info( 'ParCommInit', Message, Level=5 )
+       WRITE( Message,'(A,I0)') 'Initialize #PEs: ', ParEnv % PEs
+       CALL Info( 'ParCommInit',Message, Level=5 )
     
        IF ( ierr /= 0 ) THEN
-          WRITE( Message, * ) 'MPI Initialization failed ! (ierr=', ierr, ')'
+          WRITE( Message,'(A,I0,A)') 'MPI Initialization failed ! (ierr=', ierr, ')'
           CALL Fatal( 'ParCommInit', Message )
        END IF
 
@@ -481,6 +481,7 @@ CONTAINS
         Active(ii) = HUGE(i)
         IF ( ParallelInfo % GInterface(ii) ) THEN
           sz = SIZE(ParallelInfo % NeighbourList(ii) % Neighbours)
+
           DO j=1,sz
             k = ParallelInfo % NeighbourList(ii) % Neighbours(j)
             IF ( k == ParEnv % Mype ) THEN
@@ -766,7 +767,7 @@ CONTAINS
      TYPE(Element_t), POINTER :: Element
      real(kind=dp) :: tt
 !-------------------------------------------------------------------------------
-
+     
     IF ( .NOT. ASSOCIATED(Mesh % Edges) ) RETURN
     IF ( Mesh % NumberOfEdges <= 0 ) RETURN
 
@@ -786,11 +787,11 @@ CONTAINS
     n = Mesh % NumberOfEdges
 
     ALLOCATE(  &
-         Edgen(n), parentnodes(n,2),   &
-         owned_edges ( ParEnv % PEs ), &
-         owned_edges2( ParEnv % PEs ), &
-         tosend( ParEnv % PEs ),       &
-         toreceive( ParEnv % PEs ) )
+        Edgen(n), parentnodes(n,2),   &
+        owned_edges ( ParEnv % PEs ), &
+        owned_edges2( ParEnv % PEs ), &
+        tosend( ParEnv % PEs ),       &
+        toreceive( ParEnv % PEs ) )
 
     owned_edges  = 0
     owned_edges2 = 0
