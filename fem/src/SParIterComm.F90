@@ -245,9 +245,7 @@ CONTAINS
     CALL MPI_COMM_SPLIT(MPI_COMM_WORLD,ELMER_COLOUR,&
          ParEnv % MyPE,ELMER_COMM_WORLD,ierr) 
 #endif  
-
     ParEnv % ActiveComm = ELMER_COMM_WORLD
-
 
 !ELMER_COMM_WORLD=MPI_COMM_WORLD
 
@@ -258,9 +256,11 @@ CONTAINS
        CALL MPI_COMM_RANK( ELMER_COMM_WORLD, ParEnv % MyPE, ierr )
        OutputPE = ParEnv % MyPe
 
-       WRITE( Message,'(A,I0)') 'Initialize #PEs: ', ParEnv % PEs
-       CALL Info( 'ParCommInit',Message, Level=5 )
-    
+       IF( ParEnv % MyPe < 2 .OR. ParEnv % MyPe >= ParEnv % PEs - 2 ) THEN
+         WRITE( Message,'(A,I0)') 'Initialize #PEs: ', ParEnv % PEs
+         CALL Info( 'ParCommInit',Message, Level=5 )
+       END IF
+         
        IF ( ierr /= 0 ) THEN
           WRITE( Message,'(A,I0,A)') 'MPI Initialization failed ! (ierr=', ierr, ')'
           CALL Fatal( 'ParCommInit', Message )
