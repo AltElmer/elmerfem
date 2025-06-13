@@ -1820,7 +1820,7 @@ int DestroyBoundary(struct BoundaryType *bound)
   free_Ivector(bound->normal,1,nosides);
 
   bound->nosides = 0;
-  bound->created = FALSE;
+  bound->created = FALSE;  
 
 #if DEBUG
   printf("%d element sides were destroyed.\n",nosides); 
@@ -3328,6 +3328,7 @@ int CloneMeshes(struct FemType *data,struct BoundaryType *bound,
     bound[bndr].material = vmaterial;
     if(bound[bndr].ediscont) 
       bound[bndr].discont = vdiscont;
+    bound[bndr].normal = vnormal;
   }
 
   free_Imatrix(data->topology,1,data->noelements,0,data->maxnodes-1);
@@ -5907,6 +5908,9 @@ void CreateKnotsExtruded(struct FemType *dataxy,struct BoundaryType *boundxy,
 	bound[j].material[i] = 0;
 	bound[j].normal[i] = 1;
       }
+
+      bound->echain = FALSE;
+      bound->ediscont = FALSE;
     }
   }
   if(info) printf("Allocated for %d new BC lists\n",j);

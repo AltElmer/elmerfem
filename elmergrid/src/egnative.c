@@ -3610,6 +3610,7 @@ void InitParameters(struct ElmergridType *eg)
   eg->metis_volcut = FALSE;
   eg->metis_seed = 0;
   eg->metis_ncuts = 1;
+  eg->metis_minconn = FALSE;
   eg->partopt = 0;
   eg->partoptim = FALSE;
   eg->partbcoptim = TRUE;
