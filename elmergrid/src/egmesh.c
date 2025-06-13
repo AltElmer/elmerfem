@@ -3534,6 +3534,7 @@ int MirrorMeshes(struct FemType *data,struct BoundaryType *bound,
     bound[bndr].material = vmaterial;
     if(bound[bndr].ediscont) 
       bound[bndr].discont = vdiscont;
+    bound[bnrd].normal = vnormal;
   }
 
   free_Imatrix(data->topology,1,data->noelements,0,data->maxnodes-1);
@@ -5909,8 +5910,8 @@ void CreateKnotsExtruded(struct FemType *dataxy,struct BoundaryType *boundxy,
 	bound[j].normal[i] = 1;
       }
 
-      bound->echain = FALSE;
-      bound->ediscont = FALSE;
+      bound[j].echain = FALSE;
+      bound[j].ediscont = FALSE;
     }
   }
   if(info) printf("Allocated for %d new BC lists\n",j);
