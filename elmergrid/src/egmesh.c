@@ -3944,11 +3944,16 @@ int RemoveUnusedNodes(struct FemType *data,int info)
   }
   
   activeknots = 0;
+  j = 0;
   for(i=1;i<=noknots;i++) {
     if(indx[i]) {
       activeknots += 1;
       indx[i] = activeknots;
-    }  
+    }
+    else  {
+      j++;
+      if(j<=5) printf("Unused node index in mesh: %d\n",i);
+    }
   }
   
   if( noknots == activeknots) {
