@@ -3534,7 +3534,7 @@ int MirrorMeshes(struct FemType *data,struct BoundaryType *bound,
     bound[bndr].material = vmaterial;
     if(bound[bndr].ediscont) 
       bound[bndr].discont = vdiscont;
-    bound[bnrd].normal = vnormal;
+    bound[bndr].normal = vnormal;
   }
 
   free_Imatrix(data->topology,1,data->noelements,0,data->maxnodes-1);
