@@ -569,12 +569,15 @@ extern "C" void ROCSerialSolve(int *n, int *rows, int *cols, double *vals, doubl
         for(i=0; i<rows[*schur_n]; i++ ) Lcols[i] = cols[i];
         for(i=0; i<rows[*schur_n]; i++ ) Lvals[i] = vals[i];
 
-        schurComplement.SetDataPtrCSR(&Lrows, &Lcols, &Lvals, "B", Lrows[*n], *n, *n);
+        schurComplement.SetDataPtrCSR(&Lrows, &Lcols, &Lvals, "A", Lrows[*schur_n], *schur_n, *schur_n);
         schurComplement.MoveToAccelerator();
+        schurComplement.Info();
 
         ls->SetPreconditioner(prec_dj);
         {
           int level=0;
+	  prec_dj_a.Set(level);
+	  prec_dj_b.Set(level);
           prec_dj.Set(prec_dj_a, prec_dj_b);
           prec_dj.SetSchurComplement(schurComplement);
         }

@@ -15873,7 +15873,7 @@ END FUNCTION SearchNodeL
 !   END IF
     S => AllocateMatrix()
     
-    nc = CoordinateSystemDimension()
+    nc = CoordinateSystemDimension() + 1
     n = A % NumberOfRows / nc
     IF(n == 0) THEN
       CALL Info('CreateSchurApproximation','No rows in Constraint matrix!')
