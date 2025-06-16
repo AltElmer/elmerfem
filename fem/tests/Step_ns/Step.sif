@@ -47,8 +47,10 @@ Solver 1
 
    Stabilization Method = String Stabilized
 
+   Linear System Use Rocalution = Logical True
+
    Linear System Convergence Tolerance = 1.0e-8
-   Linear System Preconditioning = ILU0
+   Linear System Preconditioning = Schur
    Linear System Residual Output = 1
    Steady State Convergence Tolerance = 1.0e-5
 
