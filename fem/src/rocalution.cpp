@@ -596,8 +596,8 @@ extern "C" void ROCSerialSolve(int *n, int *rows, int *cols, double *vals, doubl
         Lvals = (double *)malloc((schur_rows[*schur_n])*sizeof(double));
 
         for(i=0; i<=*schur_n; i++ ) Lrows[i] = schur_rows[i];
-        for(i=0; i<rows[*schur_n]; i++ ) Lcols[i] = schur_cols[i];
-        for(i=0; i<rows[*schur_n]; i++ ) Lvals[i] = schur_vals[i];
+        for(i=0; i<schur_rows[*schur_n]; i++ ) Lcols[i] = schur_cols[i];
+        for(i=0; i<schur_rows[*schur_n]; i++ ) Lvals[i] = schur_vals[i];
 
         schurComplement.SetDataPtrCSR(&Lrows, &Lcols, &Lvals, "SchurComplement", Lrows[*schur_n], *schur_n, *schur_n);
         schurComplement.MoveToAccelerator();
