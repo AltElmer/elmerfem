@@ -470,7 +470,8 @@ extern "C" void ROCParallelSolve( int *gn, int *n, int *rows, int *cols, double 
 }
 
 extern "C" void ROCSerialSolve(int *n, int *rows, int *cols, double *vals, double *b, double *x_out,
-      int *nonlin_update, int *imethod, int *prec, int *maxiter, double *TOL)
+      int *nonlin_update, int *imethod, int *prec, int *maxiter, double *TOL, int *schur_n, int *schur_rows, 
+      int *schur_cols, int *schur_vals)
 {
 
     int i, *Lrows, *Lcols, rank, nranks;
@@ -485,7 +486,8 @@ extern "C" void ROCSerialSolve(int *n, int *rows, int *cols, double *vals, doubl
     tick = rocalution_time();
 
 
-    LocalMatrix<double> mat;
+    LocalMatrix<double> mat, schurComplement;
+
     LocalVector<double> x, rhs;
 
     Lrows = (int *)malloc((*n+1)*sizeof(int));
@@ -495,8 +497,9 @@ extern "C" void ROCSerialSolve(int *n, int *rows, int *cols, double *vals, doubl
     for(i=0; i<=*n; i++ ) Lrows[i] = rows[i];
     for(i=0; i<rows[*n]; i++ ) Lcols[i] = cols[i];
     for(i=0; i<rows[*n]; i++ ) Lvals[i] = vals[i];
-
     mat.SetDataPtrCSR(&Lrows, &Lcols, &Lvals, "A", Lrows[*n], *n, *n);
+
+
 
     // Move objects to accelerator
     mat.MoveToAccelerator();
@@ -537,6 +540,7 @@ extern "C" void ROCSerialSolve(int *n, int *rows, int *cols, double *vals, doubl
       ls->Init(*TOL*bnrm,1e-20,1e20,*maxiter);
     }
 
+
     // Preconditioner
     Jacobi<LocalMatrix<double>, LocalVector<double>, double> prec_j;
     SGS<LocalMatrix<double>, LocalVector<double>, double> prec_g;
@@ -550,6 +554,29 @@ extern "C" void ROCSerialSolve(int *n, int *rows, int *cols, double *vals, doubl
         {
           int level=0;
           prec_i.Set(level);
+        }
+        break;
+      case(3):
+        DiagJacobiSaddlePointPrecond<LocalMatrix<double>, LocalVector<double>, double> prec_dj;
+        ILU<LocalMatrix<double>, LocalVector<double>, double> prec_dj_a;
+        ILU<LocalMatrix<double>, LocalVector<double>, double> prec_dj_b;
+
+        Lrows = (int *)malloc((*schur_n+1)*sizeof(int));
+        Lcols = (int *)malloc((schur_rows[*schur_n])*sizeof(int));
+        Lvals= (double *)malloc((schur_rows[*schur_n])*sizeof(double));
+
+        for(i=0; i<=*schur_n; i++ ) Lrows[i] = rows[i];
+        for(i=0; i<rows[*schur_n]; i++ ) Lcols[i] = cols[i];
+        for(i=0; i<rows[*schur_n]; i++ ) Lvals[i] = vals[i];
+
+        schurComplement.SetDataPtrCSR(&Lrows, &Lcols, &Lvals, "B", Lrows[*n], *n, *n);
+        schurComplement.MoveToAccelerator();
+
+        ls->SetPreconditioner(prec_dj);
+        {
+          int level=0;
+          prec_dj.Set(prec_dj_a, prec_dj_b);
+          prec_dj.SetSchurComplement(schurComplement);
         }
         break;
     }

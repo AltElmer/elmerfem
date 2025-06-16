@@ -15512,13 +15512,15 @@ END FUNCTION SearchNodeL
     ! -------------------------------------------------
     INTERFACE
       SUBROUTINE ROCSerialSolve(n, rows, cols, vals, b, x, nonlin_update, &
-                  imethod, prec, maxiter, tol) BIND(C, Name="ROCSerialSolve")
+            imethod, prec, maxiter, tol, schur_n, schur_rows, schur_cols, &
+                    schur_vals ) BIND(C, Name="ROCSerialSolve")
         USE Types
         USE ISO_C_BINDING, ONLY: C_CHAR, C_INTPTR_T
 
         IMPLICIT NONE
-        REAL(KIND=dp) :: vals(*), b(*), x(*), tol
+        REAL(KIND=dp) :: vals(*), b(*), x(*), tol, schur_vals(*)
         INTEGER :: rows(*), cols(*), nonlin_update, n, imethod, prec, maxiter
+        INTEGER :: schur_n, schur_rows(*), schur_cols(*)
       END SUBROUTINE ROCSerialSolve
 
 
@@ -15603,6 +15605,8 @@ END FUNCTION SearchNodeL
        Prec = 2; ILULevel = 1
       CASE('ilu2')
        Prec = 2; ILULevel = 2
+      CASE('schur')
+       Prec = 3; ILULevel = 0
       CASE DEFAULT
        Prec = 0;
     END SELECT
@@ -15831,8 +15835,15 @@ END FUNCTION SearchNodeL
     ELSE
       ! Serial case: call the linear solver
       ! -----------------------------------
-      CALL ROCSerialSolve( n, A % Rows-1, A % Cols-1, A % Values, b, x, &
-              nonlin_update, imethod, prec, maxiter, tol )
+      BLOCK
+        TYPE(Matrix_t), POINTER :: Schur 
+        IF (prec==3) THEN
+          Schur => XCreateSchurApproximation(A)
+        END IF
+        CALL ROCSerialSolve( n, A % Rows-1, A % Cols-1, A % Values, b, x, &
+             nonlin_update, imethod, prec, maxiter, tol, Schur % numberOfRows, &
+               Schur % Rows, Schur % cols, Schur % Values )
+       END BLOCK
     END IF
 #else
     CALL Fatal('ROCSolver', "Rocalution doesn't seem to be included.")
@@ -15840,6 +15851,69 @@ END FUNCTION SearchNodeL
 !------------------------------------------------------------------------------
   END SUBROUTINE ROCSolver
 !------------------------------------------------------------------------------
+
+
+  ! Create matrix S=P((diag(A))^-1)Q
+  !------------------------------------------------------------------------  
+  FUNCTION XCreateSchurApproximation(A) RESULT ( S ) 
+
+    TYPE(Matrix_t), POINTER :: A, P, Q
+    TYPE(Matrix_t), POINTER :: S
+
+    INTEGER :: n, nc, i, j, k, l, j2, k2
+    REAL(KIND=dp) :: val
+    LOGICAL :: Found
+    
+    CALL Info('CreateSchurApproximation','Creating Shcur complement for preconditioning!',Level=20)
+
+    NULLIFY(S)
+!   IF(.NOT. ASSOCIATED(P) .OR. .NOT. ASSOCIATED(Q)) THEN
+!     CALL Info('CreateSchurApproximation','Constraint matrix not associated!')
+!     RETURN
+!   END IF
+    S => AllocateMatrix()
+    
+    nc = CoordinateSystemDimension()
+    n = A % NumberOfRows / nc
+    IF(n == 0) THEN
+      CALL Info('CreateSchurApproximation','No rows in Constraint matrix!')
+      RETURN
+    END IF
+
+    S % FORMAT = MATRIX_LIST
+          
+    ! Add the corner entry to give the max size for list.  
+    CALL List_AddToMatrixElement(S % ListMatrix, n, n, 0.0_dp ) 
+
+    l = 0
+    DO i=1,n*nc,nc
+      l = l + 1
+      DO j=A % Rows(i+nc)+nc,A % Rows(i+nc+1)-1, nc
+        k = A % Cols(j)
+        val = A % Values(k) / A % Values(A % Diag(k-nc))
+        DO j2= A % Rows(k),A % Rows(k+1)-1,nc
+          k2 = A % Cols(j2)
+          CALL List_AddToMatrixElement(S % ListMatrix, l, k2/(nc+1), -val * A % Values(k2) )
+        END DO
+      END DO
+    END DO
+
+    CALL List_toCRSMatrix(S)
+    
+    val = 1.0_dp ! SIZE(S % Values) / SIZE(P % Values)
+    WRITE(Message,*) 'Schur matrix increase factor: ',val, S % NumberOfrows, SUM(S % Values)
+    CALL Info('CreateSchurApproximation',Message)
+
+    !ALLOCATE( S % rhs(S % NumberOfRows))
+    !S % rhs = 0.0_dp
+ 
+!   IF( InfoActive(20) ) THEN
+!     CALL VectorValuesRange(P % Values,SIZE(P % Values),'Constraint')
+!     CALL VectorValuesRange(S % Values,SIZE(S % Values),'Schur')
+!   END IF          
+    
+  END FUNCTION XCreateSchurApproximation
+
 
 
 
