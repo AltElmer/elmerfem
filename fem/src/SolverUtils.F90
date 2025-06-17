@@ -15840,9 +15840,10 @@ END FUNCTION SearchNodeL
         IF (prec==3) THEN
           Schur => XCreateSchurApproximation(A)
         END IF
+        print*,minval(schur % cols), maxval(schur % cols)
         CALL ROCSerialSolve( n, A % Rows-1, A % Cols-1, A % Values, b, x, &
              nonlin_update, imethod, prec, maxiter, tol, Schur % numberOfRows, &
-               Schur % Rows, Schur % cols, Schur % Values )
+               Schur % Rows-1, Schur % cols-1, Schur % Values )
        END BLOCK
     END IF
 #else
@@ -15886,14 +15887,14 @@ END FUNCTION SearchNodeL
     CALL List_AddToMatrixElement(S % ListMatrix, n, n, 0.0_dp ) 
 
     l = 0
-    DO i=1,n*nc,nc
+    DO i=nc,n*nc,nc
       l = l + 1
-      DO j=A % Rows(i+nc)+nc,A % Rows(i+nc+1)-1, nc
+      DO j=A % Rows(i)+nc,A % Rows(i+1)-1, nc
         k = A % Cols(j)
         val = A % Values(k) / A % Values(A % Diag(k-nc))
         DO j2= A % Rows(k),A % Rows(k+1)-1,nc
           k2 = A % Cols(j2)
-          CALL List_AddToMatrixElement(S % ListMatrix, l, k2/(nc+1), -val * A % Values(k2) )
+          CALL List_AddToMatrixElement(S % ListMatrix, l, (k2-1)/nc+1, -val * A % Values(k2) )
         END DO
       END DO
     END DO
@@ -15903,15 +15904,6 @@ END FUNCTION SearchNodeL
     val = 1.0_dp ! SIZE(S % Values) / SIZE(P % Values)
     WRITE(Message,*) 'Schur matrix increase factor: ',val, S % NumberOfrows, SUM(S % Values)
     CALL Info('CreateSchurApproximation',Message)
-
-    !ALLOCATE( S % rhs(S % NumberOfRows))
-    !S % rhs = 0.0_dp
- 
-!   IF( InfoActive(20) ) THEN
-!     CALL VectorValuesRange(P % Values,SIZE(P % Values),'Constraint')
-!     CALL VectorValuesRange(S % Values,SIZE(S % Values),'Schur')
-!   END IF          
-    
   END FUNCTION XCreateSchurApproximation
 
 
