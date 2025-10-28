@@ -1925,7 +1925,7 @@ MODULE LumpingUtils
       LOGICAL :: InitHandles
 !------------------------------------------------------------------------------
       COMPLEX(KIND=dp) :: B, Zs, L(3), muinv, MagLoad(3), TemGrad(3), eps, &
-          e_ip(3), e_ip_norm, e_ip_tan(3), f_ip_tan(3), imu, phi, eps0, mu0inv, epsr, mur
+          e_ip(3), e_ip_norm, e_ip_tan(3), f_ip_tan(3), imu, phi, eps0, mu0inv, epsr, mur, ElSurfCurr(3)
       REAL(KIND=dp), ALLOCATABLE :: Basis(:),dBasisdx(:,:),WBasis(:,:),RotWBasis(:,:), e_local(:,:)
       REAL(KIND=dp) :: weight, DetJ, Normal(3), cond, u, v, w, x, y, z, rob0
       TYPE(Nodes_t), SAVE :: ElementNodes, ParentNodes
@@ -1936,7 +1936,7 @@ MODULE LumpingUtils
       INTEGER :: t, i, j, m, np, p, q, ndofs, n, nd
       LOGICAL :: AllocationsDone = .FALSE.
       TYPE(Element_t), POINTER :: Parent
-      TYPE(ValueHandle_t), SAVE :: MagLoad_h, ElRobin_h, MuCoeff_h, Absorb_h, TemRe_h, TemIm_h
+      TYPE(ValueHandle_t), SAVE :: MagLoad_h, ElRobin_h, MuCoeff_h, Absorb_h, TemRe_h, TemIm_h, ElSurfCurr_h
       TYPE(ValueHandle_t), SAVE :: CondCoeff_h, CurrDens_h, EpsCoeff_h
       INTEGER :: nactive
       
@@ -1954,6 +1954,8 @@ MODULE LumpingUtils
       IF( InitHandles ) THEN
         CALL ListInitElementKeyword( ElRobin_h,'Boundary Condition','Electric Robin Coefficient',InitIm=.TRUE.)
         CALL ListInitElementKeyword( MagLoad_h,'Boundary Condition','Magnetic Boundary Load', InitIm=.TRUE.,InitVec3D=.TRUE.)
+        CALL ListInitElementKeyword( ElSurfCurr_h, 'Boundary Condition', 'Electric Surface Current', &
+          InitIm = .TRUE., InitVec3D=.TRUE.)
         CALL ListInitElementKeyword( Absorb_h,'Boundary Condition','Absorbing BC')
         CALL ListInitElementKeyword( TemRe_h,'Boundary Condition','TEM Potential')
         CALL ListInitElementKeyword( TemIm_h,'Boundary Condition','TEM Potential Im')
@@ -2050,9 +2052,17 @@ MODULE LumpingUtils
         Zs = 1.0_dp / (SQRT(REAL(muinv*eps)))
 
         MagLoad = ListGetElementComplex3D( MagLoad_h, Basis, Element, Found, GaussPoint = t )
+        ElSurfCurr = ListGetElementComplex3D( ElSurfCurr_h, Basis, Element, Found, GaussPoint = t)
+
         TemGrad = CMPLX( ListGetElementRealGrad( TemRe_h,dBasisdx,Element,Found), &
             ListGetElementRealGrad( TemIm_h,dBasisdx,Element,Found) )
-        L = ( MagLoad + TemGrad ) / ( 2*B) 
+        if (ABS(B) > AEPS) then
+          L = ( MagLoad + TemGrad ) / ( 2*B) 
+        else 
+          L = 0_dp
+        end if
+
+        ElSurfCurr = (0_dp, 1_dp)*omega*ElSurfCurr
                 
         IF( EdgeBasis ) THEN
           ! In order to get the normal component of the electric field we must operate on the
@@ -2060,7 +2070,7 @@ MODULE LumpingUtils
           CALL FindParentUVW( Element, n, Parent, Parent % TYPE % NumberOfNodes, U, V, W, Basis ) 
           stat = ElementInfo( Parent, ParentNodes, u, v, w, detJ, Basis, dBasisdx, &
               EdgeBasis = Wbasis, RotBasis = RotWBasis, USolver = avar % Solver )
-          e_ip(1:3) = CMPLX(MATMUL(e_local(1,np+1:nd),WBasis(1:nd-np,1:3)), MATMUL(e_local(2,np+1:nd),WBasis(1:nd-np,1:3)))       
+          e_ip(1:3) = CMPLX(MATMUL(e_local(1,np+1:nd),WBasis(1:nd-np,1:3)), MATMUL(e_local(2,np+1:nd),WBasis(1:nd-np,1:3)))
         ELSE
           DO i=1,3
             e_ip(i) = CMPLX( SUM( Basis(1:n) * e_local(i,1:n) ), SUM( Basis(1:n) * e_local(i+3,1:n) ) )
@@ -2071,10 +2081,12 @@ MODULE LumpingUtils
         e_ip_tan = e_ip - e_ip_norm * Normal
 
         ! Integral over electric field: This gives the phase
-        int_el = int_el + weight * SUM(e_ip_tan * CONJG(L) )         
+        int_el = int_el + weight * SUM(e_ip_tan * (CONJG(L)))
+        int_el = int_el + weight * SUM(e_ip_tan * ElSurfCurr)
 
         ! Norm of electric field used for normalization
-        int_norm = int_norm + weight * ABS( SUM( L * CONJG(L) ) ) 
+        int_norm = int_norm + weight * ABS( SUM( (L+ElSurfCurr) * CONJG(ElSurfCurr+L) ) ) 
+
 
         trans = trans + B * weight / Omega                
         area = area + weight        
@@ -2084,6 +2096,15 @@ MODULE LumpingUtils
     END SUBROUTINE LocalIntegBC_E
 !------------------------------------------------------------------------------
 
+  FUNCTION RealComplexCrossProduct(v1,v2) RESULT(v3)
+!------------------------------------------------------------------------------
+    COMPLEX(KIND=dp) ::  v2(3), v3(3)
+    REAL(KIND=dp) :: v1(3)
+    v3(1) =  v1(2)*v2(3) - v1(3)*v2(2)
+    v3(2) = -v1(1)*v2(3) + v1(3)*v2(1)
+    v3(3) =  v1(1)*v2(2) - v1(2)*v2(1)
+!------------------------------------------------------------------------------
+  END FUNCTION RealComplexCrossProduct
 
 !-----------------------------------------------------------------------------
     SUBROUTINE LocalIntegBC_AV( BC, Element, InitHandles )
