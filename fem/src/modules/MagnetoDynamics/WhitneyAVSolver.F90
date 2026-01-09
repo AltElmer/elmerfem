@@ -1032,11 +1032,11 @@ CONTAINS
      Found = ListCheckPresent( BC, 'Outflow BC' )
      FoundAny = FoundAny .OR. Found
      
-     ThinLineCrossect = GetReal( BC, 'Thin Line Crossection Area', Found)
+     ThinLineCrossect(1:n) = GetReal( BC, 'Thin Line Crossection Area', Found)
 
      IF (Found) THEN
        CALL Info("WhitneyAVSolver", "Found a Thin Line Element", level=10)
-       ThinLineCond = GetReal(BC, 'Thin Line Conductivity', Found)
+       ThinLineCond(1:n) = GetReal(BC, 'Thin Line Conductivity', Found)
        IF (.NOT. Found) CALL Fatal('DoSolve','Thin Line Conductivity not found!')
 
        ! The basis function evaluation is not implemented for all basis types

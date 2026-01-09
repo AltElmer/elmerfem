@@ -849,7 +849,7 @@ CONTAINS
       ncdofs=nd-nn
     END IF
 
-    LondonLambda(:) = GetReal( Material, 'London Lambda', LondonEquations, Element)
+    LondonLambda(1:nn) = GetReal( Material, 'London Lambda', LondonEquations, Element)
 
     ! Numerical integration:
     ! ----------------------
@@ -1718,15 +1718,11 @@ SUBROUTINE CircuitsAndDynamicsHarmonic( Model,Solver,dt,TransientSimulation )
       CASE ('stranded')
         StrandedHomogenization = GetLogical(CompParams, 'Homogenization Model', Found)
         IF ( StrandedHomogenization ) THEN 
-          sigma_33 = GetReal(CompParams, 'sigma 33', Found)
-          IF ( .NOT. Found ) sigma_33 = 0._dp
-          sigmaim_33 = GetReal(CompParams, 'sigma 33 im', FoundIm)
-          IF ( .NOT. FoundIm ) sigmaim_33 = 0._dp
-          IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal ('LocalMatrix', 'Homogenization Model sigma 33 not found!')
+          sigma_33(1:nn_elem) = GetReal(CompParams, 'sigma 33', Found)
+          sigmaim_33(1:nn_elem) = GetReal(CompParams, 'sigma 33 im', FoundIm)
           IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal ('AddComponentEquationsAndCouplings', &
               'Homogenization Model Sigma 33 not found!')
-          Tcoef = CMPLX(0._dp, 0._dp, KIND=dp)
-          Tcoef(3,3,1:nn_elem) = CMPLX(sigma_33, sigmaim_33, KIND=dp)
+          Tcoef(3,3,1:nn_elem) = CMPLX(sigma_33(1:nn_elem), sigmaim_33(1:nn_elem), KIND=dp)
         ELSE
           Tcoef = GetCMPLXElectricConductivityTensor(Element, nn_elem, .TRUE., CoilType) 
         END IF
@@ -2027,7 +2023,7 @@ SUBROUTINE CircuitsAndDynamicsHarmonic( Model,Solver,dt,TransientSimulation )
       CALL GetPermittivity(Material, Permittivity, nn)
     END IF
 
-    LondonLambda(:) = GetReal( Material, 'London Lambda', LondonEquations, Element)
+    LondonLambda(1:nn) = GetReal( Material, 'London Lambda', LondonEquations, Element)
 
     BC => GetBC( Element )
     skinBc = .FALSE.

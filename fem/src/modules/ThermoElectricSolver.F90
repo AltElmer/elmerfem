@@ -159,8 +159,8 @@ CONTAINS
     END IF
 
 
-    rho_n = GetReal( Material, 'Density',Found,Element )
-    c_p_n = GetReal( Material, 'Heat Capacity',Found,Element )
+    rho_n(1:n) = GetReal( Material, 'Density',Found,Element )
+    c_p_n(1:n) = GetReal( Material, 'Heat Capacity',Found,Element )
 
     BF => GetBodyForce(Element)
     IF (ASSOCIATED(BF)) THEN      
@@ -356,11 +356,11 @@ CONTAINS
 
     CALL GetElementNodes( Nodes,Element )
 
-    HF_n = GetReal(BC, 'Heat Flux', Found, Element)
-    ET_n = GetReal(BC, 'External Temperature', Found, Element)
-    HT_n = GetReal(BC, 'Heat Transfer Coefficient', Found, Element)
+    HF_n(1:n) = GetReal(BC, 'Heat Flux', Found, Element)
+    ET_n(1:n) = GetReal(BC, 'External Temperature', Found, Element)
+    HT_n(1:n) = GetReal(BC, 'Heat Transfer Coefficient', Found, Element)
 
-    EF_n = GetReal(BC, 'Electric Flux', Found, Element)
+    EF_n(1:n) = GetReal(BC, 'Electric Flux', Found, Element)
 
     MASS  = 0.0_dp
     STIFF = 0.0_dp

@@ -1257,15 +1257,15 @@ END BLOCK
                      RotMLoc(3,3), velo(3), omega_velo(3,n), &
                      lorentz_velo(3,n), RotWJ(3)
     REAL(KIND=dp) :: LocalLamThick, skind, babs, muder, AlocR(2,nd)
-    REAL(KIND=dp) :: nu_11(nd), nuim_11(nd),  &
-                     nu_22(nd), nuim_22(nd),  &
-                     nu_33(nd), nuim_33(nd)
+    REAL(KIND=dp) :: nu_11(n), nuim_11(n),  &
+                     nu_22(n), nuim_22(n),  &
+                     nu_33(n), nuim_33(n)
     REAL(KIND=dp) :: nu_val, nuim_val
-    REAL(KIND=dp) :: sigma_33(nd), sigmaim_33(nd)
+    REAL(KIND=dp) :: sigma_33(n), sigmaim_33(n)
 
     COMPLEX(KIND=dp) :: mu, C(3,3), L(3), G(3), M(3), JfixPot(n), Nu(3,3)
     COMPLEX(KIND=dp) :: LocalLamCond, JAC(nd,nd), B_ip(3), Aloc(nd), &
-          CVelo(3), CVeloSum, Permittivity(nd), P_ip, DAMP(nd,nd)
+          CVelo(3), CVeloSum, Permittivity(n), P_ip, DAMP(nd,nd)
 
     LOGICAL :: Stat, Newton, HBCurve, &
                HasVelocity, HasLorenzVelocity, HasAngularVelocity
@@ -1334,22 +1334,16 @@ END BLOCK
         StrandedHomogenization = GetLogical(CompParams, 'Homogenization Model', Found)
 
         IF ( StrandedHomogenization ) THEN
-          nu_11 = 0._dp
-          nuim_11 = 0._dp
-          nu_11 = GetReal(CompParams, 'nu 11', Found)
-          nuim_11 = GetReal(CompParams, 'nu 11 im', FoundIm)
+          nu_11(1:n) = GetReal(CompParams, 'nu 11', Found)
+          nuim_11(1:n) = GetReal(CompParams, 'nu 11 im', FoundIm)
           IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal ('LocalMatrix', 'Homogenization Model nu 11 not found!')
 
-          nu_22 = 0._dp
-          nuim_22 = 0._dp
-          nu_22 = GetReal(CompParams, 'nu 22', Found)
-          nuim_22 = GetReal(CompParams, 'nu 22 im', FoundIm)
+          nu_22(1:n) = GetReal(CompParams, 'nu 22', Found)
+          nuim_22(1:n) = GetReal(CompParams, 'nu 22 im', FoundIm)
           IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal ('LocalMatrix', 'Homogenization Model nu 22 not found!')
 
-          nu_33 = 0._dp
-          nuim_33 = 0._dp
-          nu_33 = GetReal(CompParams, 'nu 33', Found)
-          nuim_33 = GetReal(CompParams, 'nu 33 im', FoundIm)
+          nu_33(1:n) = GetReal(CompParams, 'nu 33', Found)
+          nuim_33(1:n) = GetReal(CompParams, 'nu 33 im', FoundIm)
           IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal ('LocalMatrix', 'Homogenization Model nu 33 not found!')
 
           ! Sigma 33 is not needed in because it does not exist in stranded coil

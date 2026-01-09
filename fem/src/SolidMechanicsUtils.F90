@@ -175,7 +175,7 @@ CONTAINS
       Density(1:n) = GetReal(Material, 'Density', Found)
       IF (.NOT. Found) CALL Fatal('BeamStiffnessMatrix', 'Density needed')
       Damping(1:n) = GetReal(Material, 'Rayleigh Damping Alpha', Found)
-      RayleighBeta = GetReal(Material, 'Rayleigh Damping Beta', Found)
+      RayleighBeta(1:n) = GetReal(Material, 'Rayleigh Damping Beta', Found)
       IF (Found .AND. .NOT.DampingBetaWarning) THEN
         CALL Warn('BeamStiffnessMatrix', 'Only mass-proportional damping, neglecting Rayleigh Damping Beta = ...')
         DampingBetaWarning = .TRUE.

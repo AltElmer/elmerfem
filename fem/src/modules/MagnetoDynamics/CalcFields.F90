@@ -707,7 +707,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    REAL(KIND=dp), POINTER :: muTensor(:,:)
    LOGICAL :: HasReluctivityFunction, HBIntegProblem, MaterialExponents, TopoOptNu
    REAL(KIND=dp) :: rdummy, Cto
-   INTEGER :: mudim, ElementalMode, cdofs, LossN
+   INTEGER :: mudim, ElementalMode, cdofs, LossN, NoActive
    TYPE(Variable_t), POINTER :: TopoOptMult
    
    TYPE VariableArray_t
@@ -1086,13 +1086,14 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    END IF
    
    PrevMaterial => NULL()
-   
-   DO i = 1, GetNOFActive()
+
+   NoActive = GetNOFActive(pSolver)
+   DO i = 1, NoActive
      Element => GetActiveElement(i)
 
-     n = GetElementNOFNodes()
+     n = GetElementNOFNodes(Element)
      IF(dim==2) THEN
-       eq_n = GetElementDOFs(Indexes)
+       eq_n = GetElementDOFs(Indexes, Element)
      ELSE
        eq_n = n
        Indexes(1:n) = Element % NodeIndexes
@@ -1112,9 +1113,9 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
      JouleHeatingFromCurrent = ( np == 0 .AND. &
          .NOT. ( PreComputedElectricPot .OR. ImposeBodyForcePotential ) )
      
-     BodyId = GetBody()
-     Material => GetMaterial()
-     BodyForce => GetBodyForce()
+     BodyId = GetBody(Element)
+     Material => GetMaterial(Element)
+     BodyForce => GetBodyForce(Element)
      
      NewMaterial = .NOT. ASSOCIATED(Material, PrevMaterial)
      IF (NewMaterial) THEN
@@ -1142,7 +1143,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
      END IF
      
      IF( ImposeBodyForcePotential ) THEN
-       ElPotSol(1,:) = GetReal(BodyForce,'Electric Potential',Found)
+       ElPotSol(1,1:n) = GetReal(BodyForce,'Electric Potential',Found)
      END IF
        
      IF ( Transient ) THEN
@@ -1154,8 +1155,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
      Omega = GetAngularFrequency(pSOlver % Values,Found,Element)
      IF( .NOT. ( RealField .OR. Found ) ) THEN
-!      CALL Fatal(Caller,&
-!          '(Angular) Frequency must be given for complex fields!')
+       CALL Fatal(Caller,'(Angular) Frequency must be given for complex fields!')
      END IF
      Freq = Omega / (2*PI)
      
@@ -1181,8 +1181,10 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
              BodyForceCurrDens(3,1:n) = CMPLX( ListGetReal(BodyForce, 'Current Density', n, Element % NodeIndexes, Found), &
                ListGetReal(BodyForce, 'Current Density im', n, Element % NodeIndexes, Found), KIND=dp)
            ELSE
-             BodyForceCurrDens(3,1:n) = CMPLX( ListGetReal(BodyForce, 'Current Density', & 
-               n, Element % NodeIndexes, Found), 0, KIND=dp)
+             !BodyForceCurrDens(3,1:n) = CMPLX( ListGetReal(BodyForce, 'Current Density', & 
+             !  n, Element % NodeIndexes, Found), 0, KIND=dp)
+             BodyForceCurrDens(3,1:n) = ListGetReal(BodyForce, 'Current Density', & 
+                 n, Element % NodeIndexes, Found)
            END IF
          END SELECT
          
@@ -1249,31 +1251,26 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
                               nu_33(n), nuim_33(n)
              REAL(KIND=dp) :: sigma_33(n), sigmaim_33(n)
 
-             nu_11 = 0._dp
-             nuim_11 = 0._dp
-             nu_11 = GetReal(CompParams, 'nu 11', Found)
-             nuim_11 = GetReal(CompParams, 'nu 11 im', FoundIm)
-             IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal ('LocalMatrix', 'Homogenization Model nu 11 not found!')
-             nu_22 = 0._dp
-             nuim_22 = 0._dp
-             nu_22 = GetReal(CompParams, 'nu 22', Found)
-             nuim_22 = GetReal(CompParams, 'nu 22 im', FoundIm)
-             IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal ('LocalMatrix', 'Homogenization Model nu 22 not found!')
-             nu_33 = 0._dp
-             nuim_33 = 0._dp
-             nu_33 = GetReal(CompParams, 'nu 33', Found)
-             nuim_33 = GetReal(CompParams, 'nu 33 im', FoundIm)
-             IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal ('LocalMatrix', 'Homogenization Model nu 33 not found!')
+             nu_11(1:n) = GetReal(CompParams, 'nu 11', Found)
+             nuim_11(1:n) = GetReal(CompParams, 'nu 11 im', FoundIm)
+             IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal (Caller, 'Homogenization Model nu 11 not found!')
+
+             nu_22(1:n) = GetReal(CompParams, 'nu 22', Found)
+             nuim_22(1:n) = GetReal(CompParams, 'nu 22 im', FoundIm)
+             IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal (Caller, 'Homogenization Model nu 22 not found!')
+
+             nu_33(1:n) = GetReal(CompParams, 'nu 33', Found)
+             nuim_33(1:n) = GetReal(CompParams, 'nu 33 im', FoundIm)
+             IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal (Caller, 'Homogenization Model nu 33 not found!')
+
              Nu_el = CMPLX(0.0d0, 0.0d0, kind=dp)
              Nu_el(1,1,1:n) = nu_11(1:n) + im * nuim_11(1:n)
              Nu_el(2,2,1:n) = nu_22(1:n) + im * nuim_22(1:n)
              Nu_el(3,3,1:n) = nu_33(1:n) + im * nuim_33(1:n)
 
-             sigma_33 = GetReal(CompParams, 'sigma 33', Found)
-             IF ( .NOT. Found ) sigma_33 = 0._dp
-             sigmaim_33 = GetReal(CompParams, 'sigma 33 im', FoundIm)
-             IF ( .NOT. FoundIm ) sigmaim_33 = 0._dp
-             IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal ('LocalMatrix', 'Homogenization Model sigma 33 not found!')
+             sigma_33(1:n) = GetReal(CompParams, 'sigma 33', Found)
+             sigmaim_33(1:n) = GetReal(CompParams, 'sigma 33 im', FoundIm)
+             IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal (Caller, 'Homogenization Model sigma 33 not found!')
 
              Tcoef = 0._dp
              Tcoef(1,1,1:n) = sigma_33(1:n) + im * sigmaim_33(1:n) ! stranded uses only sigma 33
@@ -1313,9 +1310,9 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
          ! -------------------------------------------------------------
         
          IF (dim == 3) THEN
-             DO k = 1,n
-               Tcoef(1:3,1:3,k) = MATMUL(MATMUL(RotM(1:3,1:3,k), Tcoef(1:3,1:3,k)), TRANSPOSE(RotM(1:3,1:3,k)))
-             END DO
+           DO k = 1,n
+             Tcoef(1:3,1:3,k) = MATMUL(MATMUL(RotM(1:3,1:3,k), Tcoef(1:3,1:3,k)), TRANSPOSE(RotM(1:3,1:3,k)))
+           END DO
          END IF
        CASE DEFAULT
          CALL Fatal (Caller, 'Non existent Coil Type Chosen!')
@@ -1339,8 +1336,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
            R_Z = CMPLX(0.0_dp, 0.0_dp, kind=dp)
          END IF
        ELSE
-         ! Seek via a given permeability: In this case the reluctivity will be 
-         ! a complex scalar:
+         ! Seek via a given permeability: In this case the reluctivity will be a complex scalar:
          CALL GetReluctivity(Material,R_Z,n)
        END IF
      END IF
@@ -1372,9 +1368,9 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
      E = 0._dp; B=0._dp
 
      haszirka = .FALSE.
-     if(ASSOCIATED(MFS) .OR. ASSOCIATED(el_MFS)) THEN
+     IF(ASSOCIATED(MFS) .OR. ASSOCIATED(el_MFS)) THEN
        CALL GetHystereticMFS(Element, force(:,4:6), pSolver, HasZirka, CSymmetry=CSymmetry)
-     end if
+     END IF
 
      DO j = 1,IP % n
        IF(dim == 2 ) THEN
@@ -1415,7 +1411,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
          END SELECT
        END DO
 
-       IF(ImposeCircuitCurrent .and. ItoJCoeffFound) THEN
+       IF(ImposeCircuitCurrent .AND. ItoJCoeffFound) THEN
          IF (CoilUseWvec) THEN
            wvec = ListGetElementVectorSolution( Wvec_h, Basis, Element, dofs = dim )
          ELSE
@@ -2200,7 +2196,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
                  BLOCK
                    COMPLEX(KIND=dp) :: vecpot(3), fluxlink
                    vecpot(1:3) = VP_ip(1,1:3) + im*VP_ip(2,1:3)
-                   fluxlink = s*Basis(p) * sum(vecpot*conjg(curdens))
+                   fluxlink = s*Basis(p) * SUM(vecpot*CONJG(curdens))
                    ComponentFluxLinkage(1,CompId)=ComponentFluxLinkage(1,CompId)+REAL(fluxlink)
                    ComponentFluxLinkage(2,CompId)=ComponentFluxLinkage(2,CompId)+AIMAG(fluxlink)
                  END BLOCK
@@ -2212,6 +2208,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
      END DO ! j
 
      IF(NodalFields) THEN
+       CALL Info(Caller,'Solving for nodal fields',Level=20)
        IF(.NOT. ConstantMassMatrixInUse ) THEN
          CALL DefaultUpdateEquations( MASS,Force(:,1))
        END IF
@@ -2224,6 +2221,7 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
      END IF
 
      IF(ElementalFields) THEN
+       CALL Info(Caller,'Solving for elemental fields',Level=20)
        dofs = 0
        
        IF( ElementalMode == 1 ) THEN
@@ -2257,8 +2255,10 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
        ! This is a nodal quantity
        CALL LocalCopy(EL_NF, fdim, eq_n, FORCE, Dofs)
      END IF
-   END DO   
+   END DO  ! NoActive
 
+   CALL Info(Caller,'NoActive end',Level=20)
+   
    !
    ! Some postprocessing of surface currents generated by skin BCs (in time-harmonic cases): 
    !----------------------------------------------------------------------------------------
@@ -2404,7 +2404,9 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    END IF
    
    DoAve = GetLogical(SolverParams,'Average Within Materials',Found)
-      
+   IF(DoAve) CALL Info(Caller,'Averaging within materials',Level=20)
+
+   
    ! Assembly of the face terms:
    !----------------------------
    IF(.NOT. ConstantMassMatrixInUse ) THEN
@@ -2456,13 +2458,15 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
    
    ! surface current density uses the loads
    IF (ASSOCIATED(SCD)) THEN
+     CALL Info(Caller,'Normalizing surface current density',Level=20)
      DO i=1,3*vdofs
        WHERE( SurfWeight > 0 ) 
          SCD % Values(i::3*vdofs) = SCD % Values(i::3*vdofs) / SurfWeight(:)
        END WHERE
      END DO
    END IF
-      
+
+   CALL Info(Caller,'Computing lumped quantities',Level=20)
 
    IF( ListCheckPresentAnyComponent( Model, 'Flux linkage' ) ) THEN
      DO j=1,Model % NumberOfComponents
@@ -2914,11 +2918,12 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
        BC=>GetBC()
        IF (.NOT. ASSOCIATED(BC) ) CYCLE
        
-       ThinLineCrossect = GetReal( BC, 'Thin Line Crossection Area', Found)
+       n  = GetElementNOFNodes(Element)
+       ThinLineCrossect(1:n) = GetReal( BC, 'Thin Line Crossection Area', Found)
 
        IF (Found) THEN
-         CALL Info("CalcFields", "Found a Thin Line Element", level=10)
-         ThinLineCond = GetReal(BC, 'Thin Line Conductivity', Found)
+         CALL Info("CalcFields", "Found a Thin Line Element", level=20)
+         ThinLineCond(1:n) = GetReal(BC,'Thin Line Conductivity', Found)
          IF (.NOT. Found) CALL Fatal('CalcFields','Thin Line Conductivity not found!')
        ELSE
          CYCLE
@@ -2937,7 +2942,6 @@ END SUBROUTINE MagnetoDynamicsCalcFields_Init
 
        Model % CurrentElement => Element
        nd = GetElementNOFDOFs(Element)
-       n  = GetElementNOFNodes(Element)
        CALL GetElementNodes(Nodes, Element)
   !     line_tangent = 0._dp
   !     line_tangent(1) = Nodes % x(2) - Nodes % x(1)

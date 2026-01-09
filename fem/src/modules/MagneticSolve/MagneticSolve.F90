@@ -256,9 +256,9 @@
            Conductivity(1:n) = GetReal(Material, 'Electric Conductivity' )
          END IF
 
-         Mx = GetReal( Material, 'Applied Magnetic Field 1', Gotit )
-         My = GetReal( Material, 'Applied Magnetic Field 2', Gotit )
-         Mz = GetReal( Material, 'Applied Magnetic Field 3', Gotit )
+         Mx(1:n) = GetReal( Material, 'Applied Magnetic Field 1', Gotit )
+         My(1:n) = GetReal( Material, 'Applied Magnetic Field 2', Gotit )
+         Mz(1:n) = GetReal( Material, 'Applied Magnetic Field 3', Gotit )
 
          ExBx = 0.0d0
          ExBy = 0.0d0

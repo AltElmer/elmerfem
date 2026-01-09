@@ -822,10 +822,10 @@ CONTAINS
       CALL GetReluctivity(Material,R,n,Element)
     END IF
 
-    C = GetReal( Material, 'Electric Conductivity', Found, Element)
+    C(1:n) = GetReal( Material, 'Electric Conductivity', Found, Element)
 
-    M(1,:) = GetReal( Material, 'Magnetization 1', Found, Element)
-    M(2,:) = GetReal( Material, 'Magnetization 2', Found, Element)
+    M(1,1:n) = GetReal( Material, 'Magnetization 1', Found, Element)
+    M(2,1:n) = GetReal( Material, 'Magnetization 2', Found, Element)
 
     Load = 0.0d0
 
@@ -863,7 +863,7 @@ CONTAINS
     IF ( LondonEquations ) THEN
       ! Lambda = m/(n_s * e^2):
       ! -------------------
-      LondonLambda(:) = GetReal( Material, 'London Lambda', LondonEquations, Element)
+      LondonLambda(1:n) = GetReal( Material, 'London Lambda', LondonEquations, Element)
     END IF
 
     Permittivity(1:n) = GetReal( Material, 'Permittivity', Found )
@@ -1450,15 +1450,15 @@ END SUBROUTINE ! }}}
 !------------------------------------------------------------------------------
 
     GotAirGap = ListGetLogical( BC,'Air Gap', Found ) 
-    SurfCurr = GetReal( BC, 'Surface Current', GotSurfCurr )
+    SurfCurr(1:n) = GetReal( BC, 'Surface Current', GotSurfCurr )
 
     IF(.NOT. (GotAirGap .OR. GotSurfCurr)) RETURN
 
     IF( GotAirGap ) THEN
-      AirGapLength = GetReal( BC, 'Air Gap Length',Found) 
+      AirGapLength(1:n) = GetReal( BC, 'Air Gap Length',Found) 
       IF(.NOT. Found) CALL Fatal('LocalMatrixBC', '"Air Gap Length" not found!')
-      AirGapMu = GetReal( BC, 'Air Gap Relative Permeability', Found)
-      IF (.NOT. Found) AirGapMu = 1.0_dp
+      AirGapMu(1:n) = GetReal( BC, 'Air Gap Relative Permeability', Found)
+      IF (.NOT. Found) AirGapMu(1:n) = 1.0_dp
     END IF
     
     CALL GetElementNodes( Nodes, Element )
@@ -2214,15 +2214,12 @@ CONTAINS
           StrandedHomogenization = GetLogical(CompParams, 'Homogenization Model', Found)
 
           IF ( StrandedHomogenization ) THEN
-            nu_11 = 0._dp
-            nuim_11 = 0._dp
-            nu_11 = GetReal(CompParams, 'nu 11', Found)
-            nuim_11 = GetReal(CompParams, 'nu 11 im', FoundIm)
+            nu_11(1:n) = GetReal(CompParams, 'nu 11', Found)
+            nuim_11(1:n) = GetReal(CompParams, 'nu 11 im', FoundIm)
             IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal ('LocalMatrix', 'Homogenization Model nu 11 not found!')
-            nu_22 = 0._dp
-            nuim_22 = 0._dp
-            nu_22 = GetReal(CompParams, 'nu 22', Found)
-            nuim_22 = GetReal(CompParams, 'nu 22 im', FoundIm)
+
+            nu_22(1:n) = GetReal(CompParams, 'nu 22', Found)
+            nuim_22(1:n) = GetReal(CompParams, 'nu 22 im', FoundIm)
             IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal ('LocalMatrix', 'Homogenization Model nu 22 not found!')
           END IF
 
@@ -2247,7 +2244,7 @@ CONTAINS
     IF ( LondonEquations ) THEN
       ! Lambda = m/(n_s * e^2):
       ! -------------------
-      LondonLambda(:) = GetReal( Material, 'London Lambda', LondonEquations, Element)
+      LondonLambda(1:n) = GetReal( Material, 'London Lambda', LondonEquations, Element)
     END IF
 
     HBCurve = ListCheckPresent(Material,'H-B Curve')
@@ -2258,14 +2255,14 @@ CONTAINS
       CALL GetReluctivity(Material,R,n,Element)
     END IF
  
-    C = GetReal( Material, 'Electric Conductivity', Found, Element)
-    C = C + im * GetReal( Material, 'Electric Conductivity im', Found, Element)
+    C(1:n) = GetReal( Material, 'Electric Conductivity', Found, Element)
+    C(1:n) = C(1:n) + im * GetReal( Material, 'Electric Conductivity im', Found, Element)
 
-    M(1,:) = GetReal( Material, 'Magnetization 1', Found, Element)
-    M(1,:) = M(1,:) + im*GetReal( Material, 'Magnetization 1 im', Found, Element)
+    M(1,1:n) = GetReal( Material, 'Magnetization 1', Found, Element)
+    M(1,1:n) = M(1,1:n) + im*GetReal( Material, 'Magnetization 1 im', Found, Element)
 
-    M(2,:) = GetReal( Material, 'Magnetization 2', Found, Element)
-    M(2,:) = M(2,:) + im*GetReal( Material, 'Magnetization 2 im', Found, Element)
+    M(2,1:n) = GetReal( Material, 'Magnetization 2', Found, Element)
+    M(2,1:n) = M(2,1:n) + im*GetReal( Material, 'Magnetization 2 im', Found, Element)
 
     IF(ElectroDynamics) THEN 
       Permittivity(1:n) = GetReal(Material, 'Permittivity', Found)
@@ -2538,8 +2535,8 @@ CONTAINS
 !------------------------------------------------------------------------------
 
     GotAirGap = GetLogical( BC,'Air Gap', Found ) 
-    SurfCurr = GetReal( BC, 'Surface Current', GotSurfCurr )
-    SurfCurrIm = GetReal( BC, 'Surface Current Im', Found )
+    SurfCurr(1:n) = GetReal( BC, 'Surface Current', GotSurfCurr )
+    SurfCurrIm(1:n) = GetReal( BC, 'Surface Current Im', Found )
     GotSurfCurr = GotSurfCurr .OR. Found
     
     IF(.NOT. (GotSurfCurr .OR. GotAirGap) ) RETURN
@@ -2549,10 +2546,10 @@ CONTAINS
     FORCE = 0._dp
 
     IF( GotAirGap ) THEN
-      AirGapLength = GetReal( BC, 'Air Gap Length',Found )
+      AirGapLength(1:n) = GetReal( BC, 'Air Gap Length',Found )
       IF(.NOT. Found) CALL Fatal('LocalMatrixBC', '"Air Gap Length" not found!')
-      AirGapMu = GetReal( BC, 'Air Gap Relative Permeability', Found)
-      IF (.NOT. Found) AirGapMu = 1.0_dp
+      AirGapMu(1:n) = GetReal( BC, 'Air Gap Relative Permeability', Found)
+      IF (.NOT. Found) AirGapMu(1:n) = 1.0_dp
     END IF
            
     
@@ -3217,8 +3214,8 @@ CONTAINS
 !            nu_22 = GetReal(CompParams, 'nu 22', Found)
 !            nuim_22 = GetReal(CompParams, 'nu 22 im', FoundIm)
 !            IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal (Caller,'Homogenization Model nu 22 not found!')
-            sigma_33 = GetReal(CompParams, 'sigma 33', Found)
-            sigmaim_33 = GetReal(CompParams, 'sigma 33 im', FoundIm)
+            sigma_33(1:n) = GetReal(CompParams, 'sigma 33', Found)
+            sigmaim_33(1:n) = GetReal(CompParams, 'sigma 33 im', FoundIm)
             IF ( .NOT. Found .AND. .NOT. FoundIm ) CALL Fatal (Caller,'Homogenization Model Sigma 33 not found!')
           END IF
  
@@ -3295,8 +3292,7 @@ CONTAINS
         IF (.NOT. Found) BRTc5 = 1.5_dp
       END IF
 
-      LossUDF = .FALSE.
-      CoreLossUDF = GetReal( Material,'Core Loss User Function', LossUDF ) 
+      CoreLossUDF(1:n) = GetReal( Material,'Core Loss User Function', LossUDF ) 
       
       IF (BodyVolumesCompute) THEN
         BodyId = GetBody()
@@ -3309,8 +3305,8 @@ CONTAINS
         IF (StrandedHomogenization) CALL Fatal (Caller,'Calculate Complex Power for Stranded & 
                                                  Homogenization model is not implemented.')
 
-        mu = GetReal( Material, 'Relative Permeability', Found)
-        mu = mu * 4.d-7*PI
+        mu(1:n) = GetReal( Material, 'Relative Permeability', Found)
+        mu(1:n) = mu(1:n) * 4.d-7*PI
         IF ( .NOT. Found ) CALL Warn(Caller, 'Relative Permeability not found!')
       END IF
 

@@ -80,7 +80,7 @@ SUBROUTINE SunAngleSolver( Model,Solver,dt,Transient )
   INTEGER :: ElemFirst,ElemLast
   REAL(KIND=dp), POINTER :: SunAngle(:), x(:), y(:), z(:)
   REAL(KIND=dp) :: tanphi, ds, dz, Amat(2,2), b(2), c(2), &
-      x1, y1, z1, Alpha, Eps, ElemHeight(4), MaxDist, tanphi2
+      x1, y1, z1, Alpha, Eps, ElemHeight(27), MaxDist, tanphi2
   TYPE(Element_t), POINTER  :: Element
   TYPE(ValueList_t), POINTER :: Params, Material
   REAL(KIND=dp) :: detA
@@ -119,11 +119,13 @@ SUBROUTINE SunAngleSolver( Model,Solver,dt,Transient )
     ELSE
       CALL FindMeshEdges3D(Mesh)
     END IF
+    CALL Info(Caller,'Mesh edges done',Level=20)
   END IF
 
   ! For testing purposes set the height here.
   !---------------------------------------------------------------
   IF( ListCheckPresentAnyMaterial(Model,'Test Height') ) THEN
+    CALL Info(Caller,'Setting height field given by "Test Height"',Level=10) 
     CALL SetTestHeight()
   END IF
 
@@ -146,6 +148,7 @@ SUBROUTINE SunAngleSolver( Model,Solver,dt,Transient )
   SunAngle = -100.0_dp
 
   DO idof=1,dofs
+    CALL Info(Caller,'Computing angle '//I2S(idof),Level=20)
     IF(dofs==1) THEN
       Alpha = ListGetCReal( Params,'Test Angle')
     ELSE
@@ -161,7 +164,8 @@ SUBROUTINE SunAngleSolver( Model,Solver,dt,Transient )
 
     IF( Parallel ) CALL SetShadingAngleParallel()          
   END DO
-    
+  CALL Info(Caller,'All angles done',Level=10)
+  
   ! Set default value to unset nodes (=boundary at sunside)
   WHERE(SunAngle < -99.0 )
     SunAngle = 0.0_dp

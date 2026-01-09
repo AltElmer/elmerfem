@@ -368,13 +368,13 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
     Active = GetNOFActive()
     DO t=1,Active
       Element => GetActiveElement(t)
-      n  = GetElementNOFNodes()
-      nd = GetElementNOFDOFs()
-      nb = GetElementNOFBDOFs()
+      n  = GetElementNOFNodes(Element)
+      nd = GetElementNOFDOFs(Element)
+      nb = GetElementNOFBDOFs(Element)
 
       ! Volume forces:
       !---------------
-      BodyForce => GetBodyForce()
+      BodyForce => GetBodyForce(Element)
       LOAD = 0.0d0
       IF ( ASSOCIATED(BodyForce) ) THEN
         Load(1,1:n) = GetReal( BodyForce, 'FilmFlow Bodyforce 1', Found )
@@ -389,7 +389,7 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
 
       ! Material parameters:
       !---------------------
-      Material => GetMaterial()
+      Material => GetMaterial(Element)
       rho(1:n) = GetReal( Material, DensityName )
       mu(1:n)  = GetReal( Material, ViscosityName )
       gap(1:n) = GetReal( Material, 'Gap Height' )
@@ -474,8 +474,8 @@ SUBROUTINE FilmFlowSolver( Model,Solver,dt,Transient)
       Element => GetBoundaryElement(t)
       IF ( .NOT. ActiveBoundaryElement() ) CYCLE
 
-      n = GetElementNOFNodes()      
-      BC => GetBC()
+      n = GetElementNOFNodes(Element)      
+      BC => GetBC(Element)
       IF ( .NOT. ASSOCIATED(BC) ) CYCLE
 
       rho(1:n) = GetParentMatProp( DensityName, Element, Found )

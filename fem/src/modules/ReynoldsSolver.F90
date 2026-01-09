@@ -315,8 +315,8 @@ CONTAINS
         CALL Fatal(Caller,'This is a reduced dimensional solver for 1D and 2D only!')
       END IF
       
-      n  = GetElementNOFNodes()
-      nd = GetElementNOFDOFs()
+      n  = GetElementNOFNodes(Element)
+      nd = GetElementNOFDOFs(Element)
       
       CALL GetElementNodes( ElementNodes )
       CALL GetScalarLocalSolution( ElemPressure, UVariable = PresVar)
@@ -766,10 +766,14 @@ CONTAINS
 
     DO t=1, Solver % Mesh % NumberOfBoundaryElements
       Element => GetBoundaryElement(t)
-      IF ( .NOT. ActiveBoundaryElement() ) CYCLE
+      IF ( .NOT. ActiveBoundaryElement(Element) ) CYCLE
       
       BC => GetBC()
       IF ( .NOT. ASSOCIATED( BC ) ) CYCLE
+
+      n  = GetElementNOFNodes(Element)
+      nd = GetElementNOFDOFs(Element)
+      IF ( GetElementFamily(Element) == 1 ) CYCLE
       
       OpenSide = GetLogical(BC,'Open Side',gotIt) 
       FluxPres(1:n) = GetReal(BC,'Filmpressure Flux',GotFlux)
@@ -783,9 +787,6 @@ CONTAINS
       IF(.NOT. (OpenSide .OR. GotExt .OR. GotFlux .OR. GotVelo ) ) CYCLE
       
 !------------------------------------------------------------------------------
-      n  = GetElementNOFNodes()
-      nd = GetElementNOFDOFs()
-      IF ( GetElementFamily() == 1 ) CYCLE
       NodeIndexes => Element % NodeIndexes
          
       IF ( ANY( PressurePerm(NodeIndexes(1:n)) == 0 ) ) CYCLE
@@ -1200,8 +1201,8 @@ SUBROUTINE ReynoldsPostprocess( Model,Solver,dt,TransientSimulation )
       DO t=1,Solver % NumberOfActiveElements
         
         Element => GetActiveElement(t)
-        n  = GetElementNOFNodes()
-        nd = GetElementNOFDOFs()
+        n  = GetElementNOFNodes(Element)
+        nd = GetElementNOFDOFs(Element)
         
         CALL GetElementNodes( ElementNodes )
         
