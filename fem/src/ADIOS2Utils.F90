@@ -39,23 +39,62 @@ USE DefUtils
 USE ADIOS2
 IMPLICIT NONE
 
+INTEGER, PARAMETER :: ADIOS2_ARRAY_GLOBAL = 1
+INTEGER, PARAMETER :: ADIOS2_ARRAY_LOCAL = 2
+
+! TODO: add global array support
 TYPE :: AdiosWriter_t
   TYPE(adios2_adios), PRIVATE :: adios
   TYPE(adios2_io), PRIVATE :: io
   TYPE(adios2_engine), PRIVATE :: engine
+  INTEGER(kind=4) :: array_kind
   LOGICAL, PRIVATE :: Finalized
   CONTAINS
 
-  PROCEDURE, PRIVATE :: writer_real_t, writer_integer_t
   PROCEDURE, PUBLIC :: init => init_adios_t
   PROCEDURE, PUBLIC :: finalize => finalize_adios_t
-  GENERIC, PUBLIC :: write_data => writer_integer_t, writer_real_t
+
+  PROCEDURE, PRIVATE :: writer_real_t, writer_integer_t, writer_real_t_2
+  PROCEDURE, PRIVATE :: get_adios_shape_1!, get_adios_shape_2
+
+  GENERIC, PUBLIC :: write_data => writer_integer_t, writer_real_t, writer_real_t_2
+  GENERIC :: get_shape => get_adios_shape_1!, get_adios_shape_2
   FINAL :: finalize_sub
 END TYPE AdiosWriter_t
 
 PRIVATE:: get_adios_shape
 
 CONTAINS
+
+! TODO: Fortran allows to expand this to n dimensions
+SUBROUTINE get_adios_shape_1(this, array_dims, shape_dims, start_dims, count_dims)
+  IMPLICIT NONE
+  CLASS(AdiosWriter_t) :: this
+  INTEGER(kind=4), dimension(1), intent(in) :: array_dims
+  INTEGER(KIND=8), dimension(1), intent(out) :: shape_dims, start_dims, count_dims
+  integer(kind=4), allocatable :: sum_dims(:)
+  integer :: ierr
+
+  IF (this % array_kind .eq. ADIOS2_ARRAY_LOCAL) THEN
+    shape_dims(1) = array_dims(1)
+    start_dims(1) = 0
+    count_dims(1) = array_dims(1)
+  ELSEIF(this%array_kind .eq. ADIOS2_ARRAY_GLOBAL) THEN
+    allocate(sum_dims(size(array_dims,1)))
+    sum_dims(:) = 0
+    CALL MPI_AllReduce(array_dims, sum_dims, size(array_dims, 1), MPI_INTEGER, MPI_SUM, parenv % activecomm, ierr)
+    shape_dims(1) = sum_dims(1)
+    sum_dims(:) = 0
+    print *, 'rank, shape_dims: ', parenv%mype, shape_dims
+    call mpi_exscan(array_dims, sum_dims, 1, MPI_INTEGER, MPI_SUM, parenv % activecomm, ierr)
+    start_dims(1) = sum_dims(1)
+    print *, 'rank, start_dims: ', parenv%mype, start_dims
+    count_dims(1) = array_dims(1)
+  ELSE
+    CALL Fatal('AdiosWriter_t', 'Unknown array_kind')
+  END IF
+
+END SUBROUTINE
 
 SUBROUTINE get_adios_shape(n, shape_dims, start_dims, count_dims)
   IMPLICIT NONE
@@ -66,19 +105,26 @@ SUBROUTINE get_adios_shape(n, shape_dims, start_dims, count_dims)
   count_dims(1) = n
 END SUBROUTINE get_adios_shape
 
-FUNCTION init_adios_t(this, fname, mode) result(ierr)
+FUNCTION init_adios_t(this, fname, array_kind, mode) result(ierr)
   IMPLICIT NONE
   CLASS(AdiosWriter_t) :: this
   INTEGER :: ierr
   CHARACTER(*), intent(in) :: fname
-  INTEGER, optional :: mode
-  INTEGER :: mode_
+  INTEGER, OPTIONAL :: mode
+  INTEGER, OPTIONAL :: array_kind
+  INTEGER :: mode_, array_kind_
 
   IF (present(mode)) THEN
     mode_ = mode
   else
     mode_ = adios2_mode_write
   END IF
+
+  if (present(array_kind)) then
+    this % array_kind = array_kind
+  else
+    this % array_kind = ADIOS2_ARRAY_GLOBAL
+  end if
 
   CALL adios2_init(this % adios, parenv % activecomm, ierr)
   CALL adios2_declare_io(this % io, this % adios, "ioWriter", ierr)
@@ -91,9 +137,7 @@ FUNCTION finalize_adios_t(this) result(ierr)
   IMPLICIT NONE
   CLASS(AdiosWriter_t) :: this
   INTEGER :: ierr
-  print *, 'called finalize ', parenv % mype
   IF (.NOT. this % finalized) THEN
-    print *, 'finalizing ', parenv % mype
     CALL adios2_close(this%engine, ierr)
     CALL adios2_finalize(this%adios, ierr)
   END IF
@@ -120,16 +164,50 @@ SUBROUTINE writer_integer_t(this, varname, x)
   CHARACTER(512) :: adios_varname ! TODO: declare parameter max_adios_varname or use automatic allocation here
   TYPE(adios2_variable) :: var
 
-  adios_varname = "part_" // i2s(ParEnv % MyPE) // "/" // trim(varname)
+  if (this % array_kind .eq. ADIOS2_ARRAY_LOCAL) THEN
+    adios_varname = "part_" // i2s(ParEnv % MyPE) // "/" // trim(varname)
+  else
+    adios_varname = trim(varname)
+  end if
 
-  CALL get_adios_shape(size(x,1), shape_dims, start_dims, count_dims)
+  CALL this % get_adios_shape_1(shape(x), shape_dims, start_dims, count_dims)
+
   CALL adios2_define_variable(var, this%io, adios_varname, adios2_type_integer4, 1, &
     shape_dims, start_dims, count_dims, adios2_constant_dims, ierr)
   CALL adios2_put(this%engine, var, x, ierr)
 
-  END SUBROUTINE writer_integer_t
+END SUBROUTINE writer_integer_t
 
-  SUBROUTINE writer_real_t(this, varname, x)
+SUBROUTINE writer_real_t_2(this, varname, x)
+
+  IMPLICIT NONE
+
+  CLASS(AdiosWriter_t) :: this
+  CHARACTER(*), intent(in) :: varname
+  REAL(KIND=dp), intent(in), dimension(:,:) :: x
+
+  INTEGER(KIND=8), dimension(2) :: shape_dims, start_dims, count_dims
+  INTEGER :: ierr
+  CHARACTER(512) :: adios_varname
+  TYPE(adios2_variable) :: var
+
+  adios_varname = "part_" // i2s(ParEnv % MyPE) // "/" // trim(varname)
+
+  shape_dims(1) = size(x,1)
+  shape_dims(2) = size(x,2)
+  start_dims(1) = 0
+  start_dims(2) = 0
+  count_dims(1) = shape_dims(1)
+  count_dims(2) = shape_dims(2)
+
+  CALL adios2_define_variable(var, this%io, adios_varname, adios2_type_double_precision, 2, &
+    shape_dims, start_dims, count_dims, &
+    adios2_constant_dims, ierr)
+  CALL adios2_put(this%engine, var, x, ierr)
+
+END SUBROUTINE writer_real_t_2
+
+SUBROUTINE writer_real_t(this, varname, x)
 
   IMPLICIT NONE
 
