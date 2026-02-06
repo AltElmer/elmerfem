@@ -43,13 +43,16 @@ INTEGER, PARAMETER :: ADIOS2_ARRAY_GLOBAL = 1
 INTEGER, PARAMETER :: ADIOS2_ARRAY_LOCAL = 2
 INTEGER, PARAMETER :: ADIOS2_MAX_VARNAME_LEN = 512
 
-! TODO: add global array support
+! Global array support added
+! NOTE: Global arrays are catenated in first dimension across ranks. 
+
 TYPE :: AdiosWriter_t
   TYPE(adios2_adios), PRIVATE :: adios
   TYPE(adios2_io), PRIVATE :: io
   TYPE(adios2_engine), PRIVATE :: engine
   INTEGER(kind=4) :: array_kind
   LOGICAL, PRIVATE :: Finalized
+  LOGICAL, PRIVATE :: write_offsets = .true.
   CONTAINS
 
   PROCEDURE, PUBLIC :: init => init_adios_t
@@ -67,13 +70,14 @@ END TYPE AdiosWriter_t
 
 CONTAINS
 
-SUBROUTINE get_adios_shape_n(this, array_dims, shape_dims, start_dims, count_dims)
+SUBROUTINE get_adios_shape_n(this, array_dims, shape_dims, start_dims, count_dims, varname)
   IMPLICIT NONE
   CLASS(AdiosWriter_t) :: this
   INTEGER(kind=4), dimension(:), intent(in) :: array_dims
   INTEGER(KIND=8), dimension(:), intent(out) :: shape_dims, start_dims, count_dims
-  integer(kind=4), allocatable :: sum_dims(:)
+  integer(kind=8), allocatable :: sum_dims(:)
   integer :: ierr
+  CHARACTER(ADIOS2_MAX_VARNAME_LEN), INTENT(IN) :: varname
 
   IF (this % array_kind .eq. ADIOS2_ARRAY_LOCAL) THEN
     shape_dims(1) = array_dims(1)
@@ -85,11 +89,25 @@ SUBROUTINE get_adios_shape_n(this, array_dims, shape_dims, start_dims, count_dim
     CALL MPI_AllReduce(array_dims, sum_dims, 1, MPI_INTEGER, MPI_SUM, parenv % activecomm, ierr)
     shape_dims(:) = sum_dims(:)
     sum_dims(:) = 0
-    !print *, 'rank, shape_dims: ', parenv%mype, shape_dims
     call mpi_exscan(array_dims, sum_dims, 1, MPI_INTEGER, MPI_SUM, parenv % activecomm, ierr)
     start_dims(:) = sum_dims(:)
     count_dims(:) = array_dims(:)
-    !print *, 'rank, start_dims: ', parenv%mype, start_dims
+
+    IF (this % write_offsets) THEN
+      BLOCK
+        integer(kind=8), dimension(1) :: block_shape_dims, block_start_dims, block_count_dims
+        type(adios2_variable) :: var
+        block_shape_dims(1) = parenv%PEs
+        block_start_dims(1) = parenv%mype
+        block_count_dims(1) = 1
+        CALL adios2_define_variable(var, this%io, trim(varname)//"_offsets", &
+          adios2_type_integer8, 1, &
+          block_shape_dims, block_start_dims, block_count_dims, &
+          adios2_constant_dims, ierr)
+        CALL adios2_put(this%engine, var, start_dims, ierr)
+      END BLOCK
+    END IF
+
   ELSE
     CALL Fatal('AdiosWriter_t', 'Unknown array_kind')
   END IF
@@ -111,13 +129,14 @@ SUBROUTINE make_varname(this, varname, adios_varname)
   end if
 END SUBROUTINE
 
-FUNCTION init_adios_t(this, fname, array_kind, mode) result(ierr)
+FUNCTION init_adios_t(this, fname, array_kind, mode, write_offsets) result(ierr)
   IMPLICIT NONE
   CLASS(AdiosWriter_t) :: this
   INTEGER :: ierr
   CHARACTER(*), intent(in) :: fname
   INTEGER, OPTIONAL :: mode
   INTEGER, OPTIONAL :: array_kind
+  LOGICAL, OPTIONAL :: write_offsets
   INTEGER :: mode_, array_kind_
 
   IF (present(mode)) THEN
@@ -131,6 +150,8 @@ FUNCTION init_adios_t(this, fname, array_kind, mode) result(ierr)
   else
     this % array_kind = ADIOS2_ARRAY_GLOBAL
   end if
+
+  if (present(write_offsets)) this % write_offsets = write_offsets
 
   CALL adios2_init(this % adios, parenv % activecomm, ierr)
   CALL adios2_declare_io(this % io, this % adios, "ioWriter", ierr)
@@ -158,6 +179,7 @@ SUBROUTINE finalize_sub(this)
   ierr = this%finalize()
 END SUBROUTINE finalize_sub
 
+
 SUBROUTINE writer_integer_t(this, varname, x)
 
   IMPLICIT NONE
@@ -173,7 +195,7 @@ SUBROUTINE writer_integer_t(this, varname, x)
 
   call this % make_varname(varname, adios_varname)
 
-  CALL this % get_adios_shape_n(shape(x), shape_dims, start_dims, count_dims)
+  CALL this % get_adios_shape_n(shape(x), shape_dims, start_dims, count_dims, adios_varname)
 
   CALL adios2_define_variable(var, this%io, adios_varname, adios2_type_integer4, 1, &
     shape_dims, start_dims, count_dims, adios2_constant_dims, ierr)
@@ -196,7 +218,7 @@ SUBROUTINE writer_real_t_2(this, varname, x)
 
   call this % make_varname(varname, adios_varname)
 
-  CALL this % get_adios_shape_n(shape(x), shape_dims, start_dims, count_dims)
+  CALL this % get_adios_shape_n(shape(x), shape_dims, start_dims, count_dims, adios_varname)
 
   CALL adios2_define_variable(var, this%io, adios_varname, adios2_type_double_precision, 2, &
     shape_dims, start_dims, count_dims, &
@@ -220,7 +242,7 @@ SUBROUTINE writer_real_t(this, varname, x)
 
   call this % make_varname(varname, adios_varname)
 
-  CALL this % get_adios_shape_n(shape(x), shape_dims, start_dims, count_dims)
+  CALL this % get_adios_shape_n(shape(x), shape_dims, start_dims, count_dims, adios_varname)
 
   CALL adios2_define_variable(var, this%io, adios_varname, adios2_type_double_precision, 1, &
     shape_dims, start_dims, count_dims, adios2_constant_dims, ierr)
