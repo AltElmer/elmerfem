@@ -61,14 +61,34 @@ TYPE :: AdiosWriter_t
   PROCEDURE, PRIVATE :: writer_real_t, writer_integer_t, writer_real_t_2
   PROCEDURE, PRIVATE :: get_adios_shape_n
   PROCEDURE, PRIVATE :: make_varname
+  PROCEDURE, PRIVATE :: define_attribute_c, define_attribute_i8
 
 
+  GENERIC, PUBLIC :: define_attribute => define_attribute_c, define_attribute_i8
   GENERIC, PUBLIC :: write_data => writer_integer_t, writer_real_t, writer_real_t_2
   FINAL :: finalize_sub
 END TYPE AdiosWriter_t
 
 
 CONTAINS
+
+SUBROUTINE define_attribute_i8(this, attr_name, data)
+  CLASS(AdiosWriter_t) :: this
+  CHARACTER(*), INTENT(IN) :: attr_name
+  integer(kind=8) :: data
+  type(adios2_attribute) :: attribute
+  INTEGER :: ierr
+  call adios2_define_attribute(attribute, this%io, attr_name, data, ierr)
+END SUBROUTINE
+
+SUBROUTINE define_attribute_c(this, attr_name, data)
+  CLASS(AdiosWriter_t) :: this
+  CHARACTER(*), INTENT(IN) :: attr_name
+  CHARACTER(*), intent(in) :: data
+  type(adios2_attribute) :: attribute
+  INTEGER :: ierr
+  call adios2_define_attribute(attribute, this%io, attr_name, data, ierr)
+END SUBROUTINE
 
 SUBROUTINE get_adios_shape_n(this, array_dims, shape_dims, start_dims, count_dims, varname)
   IMPLICIT NONE
