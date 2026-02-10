@@ -45,13 +45,18 @@ INTEGER, PARAMETER :: ADIOS2_MAX_VARNAME_LEN = 512
 
 ! Global array support added
 ! NOTE: Global arrays are catenated in first dimension across ranks. 
+! NOTE: Local arrays are named part_#/<varname> where # is MPI rank
 
 TYPE :: AdiosWriter_t
   TYPE(adios2_adios), PRIVATE :: adios
   TYPE(adios2_io), PRIVATE :: io
   TYPE(adios2_engine), PRIVATE :: engine
   INTEGER(kind=4) :: array_kind
-  LOGICAL, PRIVATE :: Finalized
+
+  INTEGER(kind=8), PRIVATE :: step_num
+
+  LOGICAL, PRIVATE :: instep
+  LOGICAL, PRIVATE :: Finalized = .false., initialized = .false.
   LOGICAL, PRIVATE :: write_offsets = .true.
   CONTAINS
 
@@ -62,6 +67,7 @@ TYPE :: AdiosWriter_t
   PROCEDURE, PRIVATE :: get_adios_shape_n
   PROCEDURE, PRIVATE :: make_varname
   PROCEDURE, PRIVATE :: define_attribute_c, define_attribute_i8
+  PROCEDURE :: begin_step, end_step
 
 
   GENERIC, PUBLIC :: define_attribute => define_attribute_c, define_attribute_i8
@@ -71,6 +77,33 @@ END TYPE AdiosWriter_t
 
 
 CONTAINS
+
+SUBROUTINE begin_step(this)
+
+  class(AdiosWriter_t) :: this
+  integer :: ierr
+
+  if ((.not. this % instep) .and. this % initialized) then
+    call adios2_begin_step(this%engine, ierr)
+    this % instep = .true.
+  end if
+
+
+END SUBROUTINE
+
+SUBROUTINE end_step(this)
+
+  class(AdiosWriter_t) :: this
+  integer :: ierr
+
+
+  if (this % instep .and. this % initialized) then
+
+    call adios2_end_step(this%engine, ierr)
+    this % instep = .false.
+end if
+
+END SUBROUTINE
 
 SUBROUTINE define_attribute_i8(this, attr_name, data)
   CLASS(AdiosWriter_t) :: this
@@ -171,12 +204,16 @@ FUNCTION init_adios_t(this, fname, array_kind, mode, write_offsets) result(ierr)
     this % array_kind = ADIOS2_ARRAY_GLOBAL
   end if
 
+  this % step_num = 1
+  this % instep = .false.
+
   if (present(write_offsets)) this % write_offsets = write_offsets
 
   CALL adios2_init(this % adios, parenv % activecomm, ierr)
   CALL adios2_declare_io(this % io, this % adios, "ioWriter", ierr)
   CALL adios2_open(this % engine, this % io, fname, mode_, ierr)
   this % finalized = .false.
+  this % initialized = .true.
 
 END FUNCTION init_adios_t
 
@@ -184,12 +221,14 @@ FUNCTION finalize_adios_t(this) result(ierr)
   IMPLICIT NONE
   CLASS(AdiosWriter_t) :: this
   INTEGER :: ierr
-  IF (.NOT. this % finalized) THEN
+  IF ((.NOT. this % finalized) .AND. this % initialized) THEN
     call adios2_flush_all(this%adios, ierr)
     CALL adios2_close(this%engine, ierr)
     CALL adios2_finalize(this%adios, ierr)
   END IF
   this % finalized = .true.
+  this % initialized = .false.
+
 END FUNCTION finalize_adios_t
 
 SUBROUTINE finalize_sub(this) 
@@ -215,10 +254,13 @@ SUBROUTINE writer_integer_t(this, varname, x)
 
   call this % make_varname(varname, adios_varname)
 
-  CALL this % get_adios_shape_n(shape(x), shape_dims, start_dims, count_dims, adios_varname)
+  call adios2_inquire_variable(var, this%io, adios_varname, ierr)
+  if(.not. var % valid) then
+    CALL this % get_adios_shape_n(shape(x), shape_dims, start_dims, count_dims, adios_varname)
+    CALL adios2_define_variable(var, this%io, adios_varname, adios2_type_integer4, 1, &
+      shape_dims, start_dims, count_dims, adios2_constant_dims, ierr)
+  end if
 
-  CALL adios2_define_variable(var, this%io, adios_varname, adios2_type_integer4, 1, &
-    shape_dims, start_dims, count_dims, adios2_constant_dims, ierr)
   CALL adios2_put(this%engine, var, x, ierr)
 
 END SUBROUTINE writer_integer_t
@@ -238,11 +280,13 @@ SUBROUTINE writer_real_t_2(this, varname, x)
 
   call this % make_varname(varname, adios_varname)
 
-  CALL this % get_adios_shape_n(shape(x), shape_dims, start_dims, count_dims, adios_varname)
-
-  CALL adios2_define_variable(var, this%io, adios_varname, adios2_type_double_precision, 2, &
-    shape_dims, start_dims, count_dims, &
-    adios2_constant_dims, ierr)
+  call adios2_inquire_variable(var, this%io, adios_varname, ierr)
+  if(.not. var % valid) then
+    CALL this % get_adios_shape_n(shape(x), shape_dims, start_dims, count_dims, adios_varname)
+    CALL adios2_define_variable(var, this%io, adios_varname, adios2_type_double_precision, 2, &
+      shape_dims, start_dims, count_dims, &
+      adios2_constant_dims, ierr)
+  end if
   CALL adios2_put(this%engine, var, x, ierr)
 
 END SUBROUTINE writer_real_t_2
@@ -262,10 +306,13 @@ SUBROUTINE writer_real_t(this, varname, x)
 
   call this % make_varname(varname, adios_varname)
 
-  CALL this % get_adios_shape_n(shape(x), shape_dims, start_dims, count_dims, adios_varname)
+  call adios2_inquire_variable(var, this%io, adios_varname, ierr)
+  if(.not. var % valid) then
+    CALL this % get_adios_shape_n(shape(x), shape_dims, start_dims, count_dims, adios_varname)
 
-  CALL adios2_define_variable(var, this%io, adios_varname, adios2_type_double_precision, 1, &
-    shape_dims, start_dims, count_dims, adios2_constant_dims, ierr)
+    CALL adios2_define_variable(var, this%io, adios_varname, adios2_type_double_precision, 1, &
+      shape_dims, start_dims, count_dims, adios2_constant_dims, ierr)
+  end if
   CALL adios2_put(this%engine, var, x, ierr)
 
 END SUBROUTINE writer_real_t
