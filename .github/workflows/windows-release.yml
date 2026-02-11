@@ -152,57 +152,45 @@ jobs:
       # needed by every .exe and .dll we ship, plus deploy Qt6 plugins.
       - name: Bundle runtime dependencies
         run: |
-          set -euo pipefail
           INSTALL_DIR="${GITHUB_WORKSPACE}/install"
           INSTALL_BIN="${INSTALL_DIR}/bin"
           MINGW_BIN="/${MSYSTEM,,}/bin"
           MINGW_LIB="/${MSYSTEM,,}/lib"
 
-          echo "::group::Collect DLL dependencies from bin/"
-          # Pass 1: executables and DLLs in bin/
-          for pe in "${INSTALL_BIN}"/*.exe "${INSTALL_BIN}"/*.dll; do
-            [ -f "$pe" ] || continue
+          # Helper: copy MSYS2 DLL deps of a PE file into INSTALL_BIN
+          bundle_deps() {
+            local pe="$1"
             ntldd -R "$pe" 2>/dev/null \
-              | grep -io "[a-z]:.*/${MSYSTEM,,}/.*\.dll" \
+              | grep -i "/${MSYSTEM,,}/" \
+              | awk '{print $3}' \
               | while IFS= read -r dll; do
-                  dll_unix="$(cygpath -u "$dll")"
-                  [ -f "$dll_unix" ] && cp -un "$dll_unix" "${INSTALL_BIN}/" 2>/dev/null || true
+                  [ -f "$dll" ] && cp -un "$dll" "${INSTALL_BIN}/" 2>/dev/null
                 done
+            return 0
+          }
+
+          echo "::group::Pass 1 — bin/ executables and DLLs"
+          for pe in "${INSTALL_BIN}"/*.exe "${INSTALL_BIN}"/*.dll; do
+            [ -f "$pe" ] && bundle_deps "$pe"
           done
           echo "::endgroup::"
 
-          echo "::group::Collect DLL dependencies from solver modules"
-          # Pass 2: solver plugin DLLs
+          echo "::group::Pass 2 — solver module DLLs"
           SOLVER_LIB="${INSTALL_DIR}/share/elmersolver/lib"
           if [ -d "$SOLVER_LIB" ]; then
             for dll in "${SOLVER_LIB}"/*.dll; do
-              [ -f "$dll" ] || continue
-              ntldd -R "$dll" 2>/dev/null \
-                | grep -io "[a-z]:.*/${MSYSTEM,,}/.*\.dll" \
-                | while IFS= read -r dep; do
-                    dep_unix="$(cygpath -u "$dep")"
-                    [ -f "$dep_unix" ] && cp -un "$dep_unix" "${INSTALL_BIN}/" 2>/dev/null || true
-                  done
+              [ -f "$dll" ] && bundle_deps "$dll"
             done
           fi
           echo "::endgroup::"
 
-          echo "::group::Resolve newly-added DLLs (transitive pass)"
-          # Pass 3: the DLLs we just copied may themselves have deps
+          echo "::group::Pass 3 — transitive deps of newly copied DLLs"
           for dll in "${INSTALL_BIN}"/*.dll; do
-            [ -f "$dll" ] || continue
-            ntldd -R "$dll" 2>/dev/null \
-              | grep -io "[a-z]:.*/${MSYSTEM,,}/.*\.dll" \
-              | while IFS= read -r dep; do
-                  dep_unix="$(cygpath -u "$dep")"
-                  [ -f "$dep_unix" ] && cp -un "$dep_unix" "${INSTALL_BIN}/" 2>/dev/null || true
-                done
+            [ -f "$dll" ] && bundle_deps "$dll"
           done
           echo "::endgroup::"
 
           echo "::group::Deploy Qt6 plugins"
-          # Qt6 needs platform plugins to run; without qwindows.dll,
-          # ElmerGUI crashes with "no Qt platform plugin could be initialized"
           QT6_PLUGIN_DIR="${MINGW_LIB}/qt6/plugins"
           for plugin_type in platforms styles imageformats iconengines generic tls networkinformation; do
             src="${QT6_PLUGIN_DIR}/${plugin_type}"
@@ -210,41 +198,27 @@ jobs:
             if [ -d "$src" ]; then
               mkdir -p "$dst"
               cp -u "$src"/*.dll "$dst/" 2>/dev/null || true
-              # Also resolve deps of the plugins themselves
               for pdll in "$dst"/*.dll; do
-                [ -f "$pdll" ] || continue
-                ntldd -R "$pdll" 2>/dev/null \
-                  | grep -io "[a-z]:.*/${MSYSTEM,,}/.*\.dll" \
-                  | while IFS= read -r dep; do
-                      dep_unix="$(cygpath -u "$dep")"
-                      [ -f "$dep_unix" ] && cp -un "$dep_unix" "${INSTALL_BIN}/" 2>/dev/null || true
-                    done
+                [ -f "$pdll" ] && bundle_deps "$pdll"
               done
             fi
           done
-
-          # qt.conf tells Qt6 to look for plugins relative to the binary dir
           cat > "${INSTALL_BIN}/qt.conf" << 'QTCONF'
           [Paths]
           Plugins = .
           QTCONF
-          # Strip leading whitespace from heredoc
           sed -i 's/^[[:space:]]*//' "${INSTALL_BIN}/qt.conf"
           echo "::endgroup::"
 
           echo "::group::Bundle MS-MPI runtime"
           if [ -n "${MSMPI_BIN:-}" ]; then
             MSMPI_UNIX="$(cygpath -u "${MSMPI_BIN}")"
-            for mpi_bin in mpiexec.exe smpd.exe; do
-              [ -f "${MSMPI_UNIX}/${mpi_bin}" ] && cp -un "${MSMPI_UNIX}/${mpi_bin}" "${INSTALL_BIN}/" 2>/dev/null || true
-            done
-            # msmpi.dll is typically in the system or MSMPI lib dir
-            MSMPI_DLL_DIR="$(cygpath -u "${MSMPI_BIN}/../Lib/x64")"
-            [ -f "${MSMPI_DLL_DIR}/msmpi.dll" ] && cp -un "${MSMPI_DLL_DIR}/msmpi.dll" "${INSTALL_BIN}/" 2>/dev/null || true
-            # Also try the bin directory itself
-            [ -f "${MSMPI_UNIX}/msmpi.dll" ] && cp -un "${MSMPI_UNIX}/msmpi.dll" "${INSTALL_BIN}/" 2>/dev/null || true
+            cp -un "${MSMPI_UNIX}/mpiexec.exe" "${INSTALL_BIN}/" 2>/dev/null || true
+            cp -un "${MSMPI_UNIX}/msmpi.dll" "${INSTALL_BIN}/" 2>/dev/null || true
           fi
           echo "::endgroup::"
+
+          echo "=== Bundled DLLs: $(find "${INSTALL_BIN}" -name '*.dll' | wc -l) ==="
 
           echo "=== Total bundled DLLs in bin/: $(find "${INSTALL_BIN}" -name '*.dll' | wc -l) ==="
           echo "=== Qt6 plugin dirs: $(ls -d "${INSTALL_BIN}"/platforms "${INSTALL_BIN}"/styles "${INSTALL_BIN}"/imageformats 2>/dev/null | tr '\n' ' ') ==="

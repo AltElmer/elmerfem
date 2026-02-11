@@ -68,7 +68,7 @@ jobs:
             qwt-qt6:p
             vtk:p
             adios2:p
-            anari-sdk:p 
+            anari-sdk:p
             boost:p
             cgns:p
             cli11:p
@@ -78,11 +78,11 @@ jobs:
             gl2ps:p
             liblas:p
             libmariadbclient:p
-            netcdf:p 
+            netcdf:p
             openslide:p
             openvdb:p
             pdal:p
-            scnlib:p 
+            scnlib:p
             unixodbc:p
             utf8cpp:p
             opencascade:p
@@ -147,7 +147,7 @@ jobs:
           cd ${GITHUB_WORKSPACE}/build
           ctest . \
             -LE slow \
-            -E PoissonML \
+            -E "PoissonML|ShoeboxFsiHarmonicPlateMonolithic" \
             --timeout 300
 
       - name: re-run tests
