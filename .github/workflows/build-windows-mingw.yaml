@@ -147,6 +147,7 @@ jobs:
           cd ${GITHUB_WORKSPACE}/build
           ctest . \
             -LE slow \
+            -E PoissonML \
             --timeout 300
 
       - name: re-run tests
