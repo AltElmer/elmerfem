@@ -33,6 +33,8 @@ ELSE(Qwt_INCLUDE_DIRS)
     HINTS /usr/include/qt5/qwt6
     HINTS /msys64/mingw64/include/qwt
     HINTS /msys64/mingw64/include/qwt-qt5
+    HINTS /msys64/ucrt64/include/qwt-qt5
+    HINTS /ucrt64/include/qwt-qt5
     )
   FIND_LIBRARY(QWT_LIBRARY NAMES qwt qwt6-qt5 qwt-qt5 qwt-qt6 qwt-qt4 qwt-qt
     /usr/lib
@@ -43,6 +45,8 @@ ELSE(Qwt_INCLUDE_DIRS)
     HINTS /usr/local/Cellar/qwt-qt4/6.1.3_1/lib
     HINTS /usr/lib/qwt-qt5
     HINTS /msys64/mingw64/lib
+    HINTS /msys64/ucrt64/lib
+    HINTS /ucrt64/lib
     )
 
 ENDIF(Qwt_INCLUDE_DIRS)
