@@ -1,0 +1,199 @@
+# ============================================================================
+# Windows Release Pipeline for ElmerFEM
+# ============================================================================
+# Builds native Windows binaries using MSYS2/UCRT64 and publishes both an
+# NSIS installer (.exe) and a portable ZIP to GitHub Releases.
+#
+# Two pipelines:
+#   - Nightly:  schedule (daily) or manual dispatch → overwrites "nightly" tag
+#   - Tagged:   push of release-* tag → creates a new formal release
+# ============================================================================
+
+name: windows-release
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # Daily at 03:00 UTC
+  workflow_dispatch:       # Manual trigger (uses devel branch)
+  push:
+    tags:
+      - 'release-*'       # Formal tagged releases
+
+# Prevent duplicate nightly runs; tagged releases always run
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: true
+
+# Permissions needed to create/update releases
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    name: Build Windows Packages (UCRT64)
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # For nightly/dispatch builds, always build from devel
+          ref: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'devel' || '' }}
+
+      # ── 2. Setup MSYS2 ────────────────────────────────────────────────
+      - name: Setup MSYS2 (UCRT64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            base-devel
+            git
+          pacboy: >-
+            cc:p
+            fc:p
+            cmake:p
+            msmpi:p
+            openblas:p
+            parmetis:p
+            mumps:p
+            suitesparse:p
+            qt6-declarative:p
+            qwt-qt6:p
+            vtk:p
+            adios2:p
+            anari-sdk:p
+            boost:p
+            cgns:p
+            cli11:p
+            eigen3:p
+            fast_float:p
+            ffmpeg:p
+            gl2ps:p
+            liblas:p
+            libmariadbclient:p
+            netcdf:p
+            openslide:p
+            openvdb:p
+            pdal:p
+            scnlib:p
+            unixodbc:p
+            utf8cpp:p
+            opencascade:p
+            nsis:p
+            parpack:p
+
+      # ── 3. Install Microsoft MPI ──────────────────────────────────────
+      - name: Install Microsoft MPI
+        uses: mpi4py/setup-mpi@v1
+        with:
+          mpi: msmpi
+
+      # ── 4. Configure CMake ────────────────────────────────────────────
+      - name: Configure
+        run: |
+          mkdir -p ${GITHUB_WORKSPACE}/build
+          cd ${GITHUB_WORKSPACE}/build
+          cmake \
+            -DCMAKE_BUILD_TYPE="Release" \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/install" \
+            -DCPACK_BUNDLE_EXTRA_WINDOWS_DLLS=OFF \
+            -DBLA_VENDOR="OpenBLAS" \
+            -DWITH_OpenMP=ON \
+            -DWITH_LUA=ON \
+            -DWITH_MPI=ON \
+            -DMPI_TEST_MAXPROC=$(nproc) \
+            -DMPIEXEC_EXECUTABLE="$(cygpath -m "${MSMPI_BIN}")/mpiexec.exe" \
+            -DWITH_Zoltan=ON \
+            -DCMAKE_C_FLAGS="-Wno-error=incompatible-pointer-types" \
+            -DParMetis_LIBRARIES="$(pkg-config --libs parmetis)" \
+            -DParMetis_INCLUDE_DIR="$(pkg-config --cflags parmetis)" \
+            -DWITH_Mumps=ON \
+            -DMumps_LIBRARIES="$(pkg-config -libs mumps-dmo);$(pkg-config -libs mumps-zmo);$(pkg-config -libs mumps-smo);$(pkg-config -libs mumps-cmo)" \
+            -DMumps_INCLUDE_DIR="$(pkg-config --variable=includedir mumps-dmo);$(pkg-config --variable=includedir mumps-zmo);$(pkg-config --variable=includedir mumps-smo);$(pkg-config --variable=includedir mumps-cmo)" \
+            -DWITH_ElmerIce=ON \
+            -DWITH_ELMERGUI=ON \
+            -DWITH_QT6=ON \
+            -DWITH_VTK=ON \
+            -DWITH_OCC=ON \
+            -DWITH_MATC=ON \
+            -DWITH_PARAVIEW=ON \
+            -DCREATE_PKGCONFIG_FILE=ON \
+            -DMAKE_NSIS_PACKAGE=ON \
+            -DMAKE_ZIP_PACKAGE=ON \
+            -DEXTERNAL_UMFPACK=ON \
+            -DEXTERNAL_ARPACK=ON \
+            -DEXTERNAL_PARPACK=ON \
+            ..
+
+      # ── 5. Build ──────────────────────────────────────────────────────
+      - name: Build
+        run: |
+          cd ${GITHUB_WORKSPACE}/build
+          cmake --build . -j$(nproc)
+
+      # ── 6. Install ────────────────────────────────────────────────────
+      - name: Install
+        run: |
+          cd ${GITHUB_WORKSPACE}/build
+          cmake --install .
+
+      # ── 7. Package with CPack ─────────────────────────────────────────
+      - name: Package (NSIS + ZIP)
+        run: |
+          cd ${GITHUB_WORKSPACE}/build
+          # Generate both NSIS installer and ZIP archive
+          cpack -G "NSIS;ZIP" -V
+
+      # ── 8. Upload build artifacts ─────────────────────────────────────
+      # Always upload regardless of release step outcome, useful for debugging.
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: elmerfem-windows-packages
+          path: |
+            build/*.exe
+            build/*.zip
+          retention-days: 14
+
+      # ── 9. Determine release metadata ─────────────────────────────────
+      - name: Set release variables
+        id: release-vars
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "name=ElmerFEM ${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=true" >> "$GITHUB_OUTPUT"
+            echo "body=Official release **${{ github.ref_name }}**." >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=nightly" >> "$GITHUB_OUTPUT"
+            echo "name=Nightly Build" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
+            DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
+            SHA=$(git rev-parse --short HEAD)
+            echo "body=Automated nightly build from \`devel\` branch.%0A%0A- **Date:** ${DATE}%0A- **Commit:** ${SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── 10. Publish to GitHub Releases ────────────────────────────────
+      - name: Create / Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release-vars.outputs.tag }}
+          name: ${{ steps.release-vars.outputs.name }}
+          body: ${{ steps.release-vars.outputs.body }}
+          prerelease: ${{ steps.release-vars.outputs.prerelease }}
+          make_latest: ${{ steps.release-vars.outputs.make_latest }}
+          files: |
+            build/*.exe
+            build/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
