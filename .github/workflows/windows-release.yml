@@ -217,8 +217,6 @@ jobs:
           fi
           echo "::endgroup::"
 
-          echo "=== Bundled DLLs: $(find "${INSTALL_BIN}" -name '*.dll' | wc -l) ==="
-
           echo "=== Total bundled DLLs in bin/: $(find "${INSTALL_BIN}" -name '*.dll' | wc -l) ==="
           echo "=== Qt6 plugin dirs: $(ls -d "${INSTALL_BIN}"/platforms "${INSTALL_BIN}"/styles "${INSTALL_BIN}"/imageformats 2>/dev/null | tr '\n' ' ') ==="
 
