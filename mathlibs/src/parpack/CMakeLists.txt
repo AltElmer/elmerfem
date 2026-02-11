@@ -14,6 +14,14 @@ SET(parpack_SRCS pcgetv0.f pclarnv.f pcnaitr.f pcnapps.f pcnaup2.f
 
 ADD_LIBRARY(parpack SHARED ${parpack_SRCS})
 
+# Legacy Fortran 77 MPI code passes scalars where MPI expects arrays
+# (rank mismatch). GCC 10+ rejects this by default; downgrade to warning.
+INCLUDE(CheckFortranCompilerFlag)
+CHECK_Fortran_COMPILER_FLAG("-fallow-argument-mismatch" FC_HAS_ALLOW_ARG_MISMATCH)
+IF(FC_HAS_ALLOW_ARG_MISMATCH)
+  TARGET_COMPILE_OPTIONS(parpack PRIVATE $<$<COMPILE_LANGUAGE:Fortran>:-fallow-argument-mismatch>)
+ENDIF()
+
 ADD_DEPENDENCIES(parpack arpack)
 
 TARGET_LINK_LIBRARIES(parpack Elmer::MPI_Fortran)

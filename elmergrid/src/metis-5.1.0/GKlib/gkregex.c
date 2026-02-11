@@ -484,15 +484,18 @@ static unsigned int re_string_context_at (const re_string_t *input, int idx,
 #define re_string_skip_bytes(pstr,idx) ((pstr)->cur_idx += (idx))
 #define re_string_set_index(pstr,idx) ((pstr)->cur_idx = (idx))
 
-#ifdef __GNUC__
-# define alloca(size)   __builtin_alloca (size)
+#ifndef alloca
+# ifdef __GNUC__
+#  define alloca(size)   __builtin_alloca (size)
+# elif defined(_MSC_VER)
+#  include <malloc.h>
+#  define alloca _alloca
+# else
+#  error No alloca()
+# endif
+#endif
+#ifndef HAVE_ALLOCA
 # define HAVE_ALLOCA 1
-#elif defined(_MSC_VER)
-# include <malloc.h>
-# define alloca _alloca
-# define HAVE_ALLOCA 1
-#else
-# error No alloca()
 #endif
 
 #ifndef _LIBC
@@ -5086,7 +5089,7 @@ parse_dup_op (bin_tree_t *elem, re_string_t *regexp, re_dfa_t *dfa,
     old_tree = NULL;
 
   if (elem->token.type == SUBEXP)
-    postorder (elem, mark_opt_subexp, (void *) (long) elem->token.opr.idx);
+    postorder (elem, mark_opt_subexp, (void *) (intptr_t) elem->token.opr.idx);
 
   tree = create_tree (dfa, elem, NULL, (end == -1 ? OP_DUP_ASTERISK : OP_ALT));
   if (BE (tree == NULL, 0))
@@ -6298,7 +6301,7 @@ create_token_tree (re_dfa_t *dfa, bin_tree_t *left, bin_tree_t *right,
 static reg_errcode_t
 mark_opt_subexp (void *extra, bin_tree_t *node)
 {
-  int idx = (int) (long) extra;
+  int idx = (int) (intptr_t) extra;
   if (node->token.type == SUBEXP && node->token.opr.idx == idx)
     node->token.opt_subexp = 1;
 
