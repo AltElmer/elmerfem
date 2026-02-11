@@ -165,8 +165,7 @@ jobs:
               | awk '{print $3}' \
               | while IFS= read -r dll; do
                   [ -f "$dll" ] && cp -un "$dll" "${INSTALL_BIN}/" 2>/dev/null
-                done
-            return 0
+                done || true
           }
 
           echo "::group::Pass 1 — bin/ executables and DLLs"
