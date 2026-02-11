@@ -49,6 +49,14 @@ SET(solverlib_SOURCES AddrFunc.F90 NavierStokes.F90 NavierStokesGeneral.F90
 #SET_PROPERTY(SOURCE MaxwellAxiS.F90 PROPERTY
 #	COMPILE_DEFINITIONS FULL_INDUCTION)
 
+# LinearForms.F90 intentionally passes assumed-shape array elements to BLAS
+# routines (DGEMM/DGEMV). GCC warns about this but the calls are safe
+# because all arrays are declared CONTIGUOUS.
+IF(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+  SET_SOURCE_FILES_PROPERTIES(LinearForms.F90
+    PROPERTIES COMPILE_FLAGS "-Wno-array-temporaries")
+ENDIF()
+
 IF(WITH_EXTOPTIM)
   LIST(APPEND solverlib_SOURCES minpack.F90 minpack_kinds.F90
   PowellOptBobyqa.F90 PowellOptNewuoa.F90)
