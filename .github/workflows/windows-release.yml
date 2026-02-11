@@ -124,7 +124,7 @@ jobs:
             -DWITH_OCC=ON \
             -DWITH_MATC=ON \
             -DWITH_PARAVIEW=ON \
-            -DCREATE_PKGCONFIG_FILE=ON \
+            -DCREATE_PKGCONFIG_FILE=OFF \
             -DMAKE_NSIS_PACKAGE=ON \
             -DMAKE_ZIP_PACKAGE=ON \
             -DEXTERNAL_UMFPACK=ON \
