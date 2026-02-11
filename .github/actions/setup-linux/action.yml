@@ -1,0 +1,90 @@
+name: Setup Linux Build Environment
+description: Install ElmerFEM build dependencies on Ubuntu via apt-get
+
+inputs:
+  compiler:
+    description: 'Compiler family: gcc, clang, or flang'
+    required: true
+  mpi:
+    description: 'Enable MPI: ON or OFF'
+    required: true
+  os:
+    description: 'Runner OS label (e.g. ubuntu-24.04, ubuntu-24.04-arm)'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: install dependencies
+      shell: bash
+      env:
+        COMPILER: ${{ inputs.compiler }}
+        MPI: ${{ inputs.mpi }}
+        OS: ${{ inputs.os }}
+      run: |
+        sudo apt -qq update
+
+        PKGS="cmake gfortran"
+
+        # Compiler packages
+        case "$COMPILER" in
+          gcc)   PKGS="$PKGS g++ gcc" ;;
+          clang) PKGS="$PKGS clang" ;;
+          flang) PKGS="$PKGS clang-20 flang-20" ;;
+        esac
+
+        # BLAS — ARM runners need reference BLAS (OpenBLAS < 0.3.29 NaN bug)
+        if [ "$OS" = "ubuntu-24.04-arm" ]; then
+          PKGS="$PKGS libblas-dev liblapack-dev"
+        else
+          PKGS="$PKGS libopenblas-dev"
+        fi
+
+        # MPI and MPI-dependent libraries
+        if [ "$MPI" = "ON" ]; then
+          PKGS="$PKGS libopenmpi-dev libmumps-dev libparmetis-dev libhypre-dev"
+          PKGS="$PKGS trilinos-all-dev libptscotch-dev libnetcdff-dev"
+        fi
+
+        # GCC-only libraries
+        if [ "$COMPILER" = "gcc" ]; then
+          PKGS="$PKGS libsuitesparse-dev"
+          if [ "$MPI" = "ON" ]; then
+            PKGS="$PKGS librocalution-dev"
+          fi
+        fi
+
+        # GUI, VTK, OCC
+        PKGS="$PKGS libqwt-qt5-dev qtscript5-dev libqt5svg5-dev"
+        PKGS="$PKGS libvtk9-qt-dev libglvnd-dev"
+        PKGS="$PKGS occt-misc libocct-data-exchange-dev libocct-draw-dev"
+
+        sudo apt install -y $PKGS
+
+    - name: workaround rocALUTION HIP dependency
+      if: inputs.compiler == 'gcc' && inputs.mpi == 'ON'
+      shell: bash
+      run: |
+        sudo sed -i '/find_dependency(HIP)/d' \
+          /usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)/cmake/rocalution/rocalution-config.cmake
+
+    - name: set compiler environment
+      shell: bash
+      run: |
+        case "${{ inputs.compiler }}" in
+          gcc)
+            echo "CC=gcc"       >> $GITHUB_ENV
+            echo "CXX=g++"     >> $GITHUB_ENV
+            echo "FC=gfortran" >> $GITHUB_ENV
+            ;;
+          clang)
+            echo "CC=clang"     >> $GITHUB_ENV
+            echo "CXX=clang++" >> $GITHUB_ENV
+            echo "FC=gfortran" >> $GITHUB_ENV
+            ;;
+          flang)
+            echo "CC=clang-20"     >> $GITHUB_ENV
+            echo "CXX=clang++-20" >> $GITHUB_ENV
+            echo "FC=flang-20"    >> $GITHUB_ENV
+            ;;
+        esac

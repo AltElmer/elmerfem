@@ -1,0 +1,433 @@
+name: ci
+on:
+  push:
+    branches: [devel]
+    paths-ignore:
+      - '**.nix'
+      - 'flake.lock'
+  pull_request:
+    paths-ignore:
+      - '**.nix'
+      - 'flake.lock'
+  schedule:
+    - cron: '0 6 * * 1'  # Monday 6AM UTC — full matrix
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  build:
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+    timeout-minutes: 240
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── Linux ──────────────────────────────────────────────
+          - name: "Linux GCC MPI+OMP"
+            os: ubuntu-24.04
+            platform: linux
+            compiler: gcc
+            mpi: ON
+            openmp: ON
+            deps: external
+            fast-gate: true
+            schedule-only: false
+            cmake-extra: >-
+              -DBLA_VENDOR=OpenBLAS
+              -DWITH_CHOLMOD=ON
+              -DWITH_Hypre=ON -DHYPRE_INCLUDE_DIR=/usr/include/hypre
+              -DWITH_ROCALUTION=ON
+              -DWITH_Trilinos=ON
+              -DWITH_VTK=ON -DWITH_OCC=ON
+
+          - name: "Linux GCC serial"
+            os: ubuntu-24.04
+            platform: linux
+            compiler: gcc
+            mpi: OFF
+            openmp: ON
+            deps: external
+            fast-gate: false
+            schedule-only: false
+            cmake-extra: >-
+              -DBLA_VENDOR=OpenBLAS
+              -DWITH_CHOLMOD=ON
+              -DWITH_VTK=ON -DWITH_OCC=ON
+
+          - name: "Linux GCC ARM"
+            os: ubuntu-24.04-arm
+            platform: linux
+            compiler: gcc
+            mpi: ON
+            openmp: OFF
+            deps: external
+            fast-gate: false
+            schedule-only: false
+            cmake-extra: >-
+              -DBLA_VENDOR=Generic
+              -DWITH_CHOLMOD=ON
+              -DWITH_Hypre=ON -DHYPRE_INCLUDE_DIR=/usr/include/hypre
+              -DWITH_ROCALUTION=ON
+              -DWITH_Trilinos=ON
+              -DWITH_VTK=ON -DWITH_OCC=ON
+
+          - name: "Linux Clang MPI"
+            os: ubuntu-24.04
+            platform: linux
+            compiler: clang
+            mpi: ON
+            openmp: OFF
+            deps: external
+            fast-gate: false
+            schedule-only: false
+            cmake-extra: >-
+              -DBLA_VENDOR=OpenBLAS
+              -DWITH_Trilinos=ON
+              -DWITH_VTK=ON -DWITH_OCC=ON
+
+          - name: "Linux Flang serial"
+            os: ubuntu-24.04
+            platform: linux
+            compiler: flang
+            mpi: OFF
+            openmp: OFF
+            deps: external
+            fast-gate: false
+            schedule-only: false
+            cmake-extra: >-
+              -DBLA_VENDOR=OpenBLAS
+              -DHAVE_QP=OFF
+
+          # ── macOS ──────────────────────────────────────────────
+          - name: "macOS ARM"
+            os: macos-14
+            platform: macos
+            compiler: gcc
+            mpi: ON
+            openmp: OFF
+            deps: external
+            fast-gate: false
+            schedule-only: false
+            cmake-extra: >-
+              -DCMAKE_BUILD_TYPE=Release
+              -DBLA_VENDOR=OpenBLAS
+              -DUSE_MACOS_PACKAGE_MANAGER=OFF
+              -DWITH_Zoltan=OFF -DWITH_Mumps=OFF -DWITH_CHOLMOD=OFF
+
+          - name: "macOS Intel"
+            os: macos-15-intel
+            platform: macos
+            compiler: gcc
+            mpi: ON
+            openmp: ON
+            deps: external
+            fast-gate: false
+            schedule-only: false
+            cmake-extra: >-
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo
+              -DBLA_VENDOR=OpenBLAS
+              -DUSE_MACOS_PACKAGE_MANAGER=OFF
+              -DWITH_Zoltan=OFF -DWITH_Mumps=OFF
+              -DWITH_CHOLMOD=ON
+
+          # ── Windows ────────────────────────────────────────────
+          - name: "Win MSYS2 external"
+            os: windows-latest
+            platform: windows
+            compiler: gcc
+            mpi: ON
+            openmp: ON
+            deps: external
+            fast-gate: true
+            schedule-only: false
+            cmake-extra: >-
+              -DEXTERNAL_UMFPACK=ON -DEXTERNAL_ARPACK=ON -DEXTERNAL_PARPACK=ON
+
+          - name: "Win MSYS2 bundled"
+            os: windows-latest
+            platform: windows
+            compiler: gcc
+            mpi: ON
+            openmp: ON
+            deps: bundled
+            fast-gate: false
+            schedule-only: false
+            cmake-extra: ""
+
+          # ── Schedule-only full test runs ───────────────────────
+          - name: "Full GCC (all tests)"
+            os: ubuntu-latest
+            platform: linux
+            compiler: gcc
+            mpi: ON
+            openmp: ON
+            deps: external
+            fast-gate: false
+            schedule-only: true
+            full-test: true
+            cmake-extra: >-
+              -DBLA_VENDOR=OpenBLAS
+
+          - name: "Full Clang (all tests)"
+            os: ubuntu-latest
+            platform: linux
+            compiler: clang
+            mpi: ON
+            openmp: ON
+            deps: external
+            fast-gate: false
+            schedule-only: true
+            full-test: true
+            cmake-extra: >-
+              -DBLA_VENDOR=OpenBLAS
+              -DOpenMP_C_FLAGS=-fopenmp=libgomp
+              -DOpenMP_CXX_FLAGS=-fopenmp=libgomp
+
+    defaults:
+      run:
+        shell: ${{ matrix.platform == 'windows' && 'msys2 {0}' || 'bash' }}
+
+    steps:
+      # ── 0. Gate check ─────────────────────────────────────────
+      # matrix.* is not available in job-level if:, so we gate here.
+      # fast-gate entries run on push; all others need PR/schedule/dispatch.
+      # schedule-only entries are further restricted.
+      - name: gate check
+        id: gate
+        shell: bash
+        run: |
+          GATE="${{ matrix.fast-gate }}"
+          SCHED="${{ matrix.schedule-only }}"
+          EVENT="${{ github.event_name }}"
+          RUN=true
+          if [ "$GATE" != "true" ] && [ "$EVENT" = "push" ]; then
+            RUN=false
+          fi
+          if [ "$SCHED" = "true" ] && [ "$EVENT" != "schedule" ] && [ "$EVENT" != "workflow_dispatch" ]; then
+            RUN=false
+          fi
+          echo "run=$RUN" >> $GITHUB_OUTPUT
+          echo "::notice::gate=$GATE sched=$SCHED event=$EVENT → run=$RUN"
+
+      # ── 1. System info ───────────────────────────────────────
+      - name: CPU info (Linux/macOS)
+        if: steps.gate.outputs.run == 'true' && matrix.platform != 'windows'
+        shell: bash
+        run: |
+          if [ "$(uname)" = "Darwin" ]; then
+            sysctl hw; sysctl machdep
+          else
+            lscpu
+          fi
+
+      - name: CPU info (Windows)
+        if: steps.gate.outputs.run == 'true' && matrix.platform == 'windows'
+        shell: pwsh
+        run: Get-CIMInstance -Class Win32_Processor | Select-Object -Property Name
+
+      # ── 2. Checkout ──────────────────────────────────────────
+      - name: checkout
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # ── 3. Setup platform ────────────────────────────────────
+      - name: setup (Linux)
+        if: steps.gate.outputs.run == 'true' && matrix.platform == 'linux'
+        uses: ./.github/actions/setup-linux
+        with:
+          compiler: ${{ matrix.compiler }}
+          mpi: ${{ matrix.mpi }}
+          os: ${{ matrix.os }}
+
+      - name: setup (macOS)
+        if: steps.gate.outputs.run == 'true' && matrix.platform == 'macos'
+        uses: ./.github/actions/setup-macos
+        with:
+          openmp: ${{ matrix.openmp }}
+          os: ${{ matrix.os }}
+
+      - name: setup (Windows)
+        if: steps.gate.outputs.run == 'true' && matrix.platform == 'windows'
+        uses: ./.github/actions/setup-windows
+        with:
+          deps: ${{ matrix.deps }}
+
+      # ── 4. Configure ─────────────────────────────────────────
+      - name: configure (Linux)
+        if: steps.gate.outputs.run == 'true' && matrix.platform == 'linux'
+        run: |
+          mkdir ${GITHUB_WORKSPACE}/build
+          cd ${GITHUB_WORKSPACE}/build
+          cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/usr" \
+            -DWITH_OpenMP=${{ matrix.openmp }} \
+            -DWITH_LUA=ON \
+            -DWITH_MPI=${{ matrix.mpi }} \
+            $([ "${{ matrix.mpi }}" = "ON" ] && echo "-DMPI_TEST_MAXPROC=2 -DMPIEXEC_PREFLAGS=--allow-run-as-root") \
+            $([ "${{ matrix.mpi }}" = "ON" ] && echo "-DWITH_Zoltan=ON -DWITH_Mumps=ON -DWITH_ElmerIce=ON" || echo "-DWITH_Zoltan=OFF -DWITH_Mumps=OFF -DWITH_ElmerIce=OFF") \
+            $([ "${{ matrix.compiler }}" = "flang" ] && echo "-DWITH_ELMERGUI=OFF -DWITH_VTK=OFF -DWITH_OCC=OFF -DWITH_MATC=OFF -DWITH_PARAVIEW=OFF" || echo "-DWITH_ELMERGUI=ON -DWITH_MATC=ON -DWITH_PARAVIEW=ON") \
+            $([ "${{ matrix.compiler }}" != "gcc" ] && echo "-DWITH_CHOLMOD=OFF -DWITH_ROCALUTION=OFF" || true) \
+            -DCREATE_PKGCONFIG_FILE=ON \
+            ${{ matrix.cmake-extra }} \
+            ..
+
+      - name: configure (macOS)
+        if: steps.gate.outputs.run == 'true' && matrix.platform == 'macos'
+        env:
+          LDFLAGS: ${{ matrix.openmp == 'ON' && format('-L{0}/opt/libomp/lib -lomp', env.HOMEBREW_PREFIX) || '' }}
+        run: |
+          mkdir ${GITHUB_WORKSPACE}/build
+          cd ${GITHUB_WORKSPACE}/build
+          cmake \
+            ${{ matrix.cmake-extra }} \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_Fortran_COMPILER=gfortran \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/usr" \
+            -DCMAKE_PREFIX_PATH="$([ "${{ matrix.openmp }}" = "ON" ] && echo "${HOMEBREW_PREFIX}/opt/libomp;")${HOMEBREW_PREFIX}/opt/openblas;${HOMEBREW_PREFIX}/opt/qt;${HOMEBREW_PREFIX}/opt/qwt" \
+            ${{ matrix.openmp == 'ON'
+              && '-DWITH_OpenMP=ON
+                  -DOpenMP_C_FLAGS="-Xclang -fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include"
+                  -DOpenMP_CXX_FLAGS="-Xclang -fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include"
+                  -DOpenMP_Fortran_FLAGS="-fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include"'
+              || '-DWITH_OpenMP=OFF' }} \
+            -DWITH_LUA=ON \
+            -DWITH_MPI=ON -DMPI_TEST_MAXPROC=2 \
+            -DWITH_ElmerIce=ON \
+            -DWITH_ELMERGUI=ON -DWITH_QT6=ON \
+            -DQWT_INCLUDE_DIR="${HOMEBREW_PREFIX}/opt/qwt/lib/qwt.framework/Headers" \
+            -DWITH_VTK=ON \
+            -DEXPAT_INCLUDE_DIR="${HOMEBREW_PREFIX}/opt/expat/include" \
+            -DWITH_OCC=ON \
+            -DWITH_MATC=ON -DWITH_PARAVIEW=ON \
+            -DCREATE_PKGCONFIG_FILE=ON \
+            ..
+
+      - name: configure (Windows)
+        if: steps.gate.outputs.run == 'true' && matrix.platform == 'windows'
+        run: |
+          mkdir ${GITHUB_WORKSPACE}/build
+          cd ${GITHUB_WORKSPACE}/build
+          cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/usr" \
+            -DCPACK_BUNDLE_EXTRA_WINDOWS_DLLS=OFF \
+            -DBLA_VENDOR=OpenBLAS \
+            -DWITH_OpenMP=ON \
+            -DWITH_LUA=ON \
+            -DWITH_MPI=ON \
+            -DMPI_TEST_MAXPROC=$(nproc) \
+            -DMPIEXEC_EXECUTABLE="$(cygpath -m "${MSMPI_BIN}")/mpiexec.exe" \
+            -DWITH_Zoltan=ON \
+            -DCMAKE_C_FLAGS="-Wno-error=incompatible-pointer-types" \
+            -DParMetis_LIBRARIES="$(pkg-config --libs parmetis)" \
+            -DParMetis_INCLUDE_DIR="$(pkg-config --cflags parmetis)" \
+            -DWITH_Mumps=ON \
+            -DMumps_LIBRARIES="$(pkg-config -libs mumps-dmo);$(pkg-config -libs mumps-zmo);$(pkg-config -libs mumps-smo);$(pkg-config -libs mumps-cmo)" \
+            -DMumps_INCLUDE_DIR="$(pkg-config --variable=includedir mumps-dmo);$(pkg-config --variable=includedir mumps-zmo);$(pkg-config --variable=includedir mumps-smo);$(pkg-config --variable=includedir mumps-cmo)" \
+            -DWITH_ElmerIce=ON \
+            -DWITH_ELMERGUI=ON -DWITH_QT6=ON \
+            -DWITH_VTK=ON -DWITH_OCC=ON \
+            -DWITH_MATC=ON -DWITH_PARAVIEW=ON \
+            -DCREATE_PKGCONFIG_FILE=ON \
+            ${{ matrix.cmake-extra }} \
+            ..
+
+      # ── 5. Build ─────────────────────────────────────────────
+      - name: build
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          cd ${GITHUB_WORKSPACE}/build
+          NPROC=$(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 2)
+          cmake --build . -j${NPROC}
+
+      # ── 6. Install ───────────────────────────────────────────
+      - name: install
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          cd ${GITHUB_WORKSPACE}/build
+          cmake --install .
+
+      # ── 7. Test ──────────────────────────────────────────────
+      - name: test
+        if: steps.gate.outputs.run == 'true'
+        id: run-ctest
+        timeout-minutes: 150
+        env:
+          CTEST_OUTPUT_ON_FAILURE: 1
+          OMP_NUM_THREADS: 1
+        run: |
+          cd ${GITHUB_WORKSPACE}/build
+          NPROC=$(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 2)
+
+          # Build exclusion regex from platform-specific file
+          EXCLUDE_FILE="${GITHUB_WORKSPACE}/.github/test-exclusions/${{ matrix.platform }}.txt"
+          EXCLUDE_ARG=""
+          if [ -f "$EXCLUDE_FILE" ]; then
+            EXCLUDES=$(grep -v '^#' "$EXCLUDE_FILE" | grep -v '^$' | paste -sd'|' || true)
+            if [ -n "$EXCLUDES" ]; then
+              EXCLUDE_ARG="-E ${EXCLUDES}"
+            fi
+          fi
+
+          # Schedule-only entries run ALL tests; others skip slow
+          if [ "${{ matrix.full-test }}" = "true" ]; then
+            ctest . -j${NPROC} ${EXCLUDE_ARG} --timeout 300
+          else
+            ctest . -j${NPROC} -LE slow ${EXCLUDE_ARG} --timeout 300
+          fi
+
+      # ── 8. Re-run failed tests ──────────────────────────────
+      - name: re-run failed tests
+        if: always() && steps.gate.outputs.run == 'true' && steps.run-ctest.outcome == 'failure'
+        timeout-minutes: 60
+        env:
+          CTEST_OUTPUT_ON_FAILURE: 1
+        run: |
+          cd ${GITHUB_WORKSPACE}/build
+          # get names of failed tests and strip potential "_np*" suffix
+          failed_tests=($(ctest . -N --rerun-failed | grep -E "Test\s+#.*" | awk '{print $3}' | sed -e 's/_np[0-9]*$//g' || true))
+          # remove duplicate test names
+          unique_failed_tests=($(echo "${failed_tests[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+          for test in "${unique_failed_tests[@]}"; do
+            # check if test is from fem or ElmerIce
+            if [ -d fem/tests/${test} ]; then
+              test_root=fem/tests
+            else
+              test_root=elmerice/Tests
+            fi
+            echo "::group::Content of ${test_root}/${test}"
+            echo ---- Files ----
+            ls -Rl ${test_root}/${test}
+            if [ -f ${test_root}/${test}/test-stderr*.log ]; then
+              err_logs=($(ls ${test_root}/${test}/test-stderr*.log))
+              for err_log in "${err_logs[@]}"; do
+                echo ---- Content of ${err_log} ----
+                cat ${err_log}
+              done
+            fi
+            if [ -f ${test_root}/${test}/test-stdout*.log ]; then
+              out_logs=($(ls ${test_root}/${test}/test-stdout*.log))
+              for out_log in "${out_logs[@]}"; do
+                echo ---- Content of ${out_log} ----
+                cat ${out_log}
+              done
+            fi
+            echo "::endgroup::"
+          done
+          echo "::group::Re-run failing tests"
+          ctest --rerun-failed --output-on-failure --timeout 180 || true
+          echo "::endgroup::"
+          echo "::group::Log from these tests"
+          [ ! -f Testing/Temporary/LastTest.log ] || cat Testing/Temporary/LastTest.log
+          echo "::endgroup::"
+
