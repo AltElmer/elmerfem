@@ -47,6 +47,8 @@
 #include "elmerpost.h"
 #include "../config.h"
 
+#include <stdint.h> /* uintptr_t for safe HWND <-> Window casts on 64-bit */
+
 #include <tcl.h>
 #include <tk.h>
 
@@ -1352,7 +1354,7 @@ Window tkXWindow()
     Window ptr = 0;
 
 #ifdef MINGW32
-    ptr = auxGetHWND();
+    ptr = (Window)(uintptr_t)auxGetHWND();
 #else
     ptr = auxXWindow();
 #endif
@@ -1364,7 +1366,7 @@ Window tkXWindow()
 static int ActivateGraphicsWindow( ClientData cl,Tcl_Interp *interp,int argc,char **argv )
 {
 #ifdef MINGW32
-    ShowWindow( tkXWindow(), SW_SHOWNORMAL );
+    ShowWindow( (HWND)(uintptr_t)tkXWindow(), SW_SHOWNORMAL );
 #endif
     return TCL_OK;
 }
@@ -2097,7 +2099,7 @@ void Mouse( )
     int MouseYPosition;
 
 
-    if ( GetFocus() != tkXWindow() ) return;
+    if ( GetFocus() != (HWND)(uintptr_t)tkXWindow() ) return;
 
 
     auxGetMouseLoc( &MouseXPosition, &MouseYPosition );
