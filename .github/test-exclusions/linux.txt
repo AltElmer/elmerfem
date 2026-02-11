@@ -1,0 +1,3 @@
+# ElmerFEM Linux test exclusions for ctest -E
+# One test name per line (combined with | for regex alternation)
+# Currently empty — all tests pass on Linux
