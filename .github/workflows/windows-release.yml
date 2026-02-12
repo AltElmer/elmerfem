@@ -146,10 +146,6 @@ jobs:
           cmake --install .
 
       # ── 7. Bundle runtime DLLs ────────────────────────────────────────
-      # Elmer's own CPACK_BUNDLE_EXTRA_WINDOWS_DLLS mechanism expects
-      # pre-populated bundle directories and misses transitive deps.
-      # Instead, we use ntldd to recursively discover all MSYS2 DLLs
-      # needed by every .exe and .dll we ship, plus deploy Qt6 plugins.
       - name: Bundle runtime dependencies
         run: |
           INSTALL_DIR="${GITHUB_WORKSPACE}/install"
@@ -158,13 +154,19 @@ jobs:
           MINGW_LIB="/${MSYSTEM,,}/lib"
 
           # Helper: copy MSYS2 DLL deps of a PE file into INSTALL_BIN
+          # CHANGED: Switched from ntldd to ldd for reliable path output
           bundle_deps() {
             local pe="$1"
-            ntldd -R "$pe" 2>/dev/null \
+            # ldd outputs: "DLLNAME => /path/to/dll (address)"
+            # We grep for the system path (e.g., /ucrt64/) to avoid system32 dlls
+            ldd "$pe" 2>/dev/null \
               | grep -i "/${MSYSTEM,,}/" \
               | awk '{print $3}' \
               | while IFS= read -r dll; do
-                  [ -f "$dll" ] && cp -un "$dll" "${INSTALL_BIN}/" 2>/dev/null
+                  # Check if file exists and copy if not already present
+                  if [ -f "$dll" ]; then
+                    cp -u "$dll" "${INSTALL_BIN}/"
+                  fi
                 done || true
           }
 
@@ -184,8 +186,15 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Pass 3 — transitive deps of newly copied DLLs"
-          for dll in "${INSTALL_BIN}"/*.dll; do
-            [ -f "$dll" ] && bundle_deps "$dll"
+          # Iterate repeatedly until no new DLLs are added to handle deep dependency trees
+          count_start=0
+          count_end=$(find "${INSTALL_BIN}" -name '*.dll' | wc -l)
+          while [ "$count_start" -ne "$count_end" ]; do
+            count_start=$count_end
+            for dll in "${INSTALL_BIN}"/*.dll; do
+              [ -f "$dll" ] && bundle_deps "$dll"
+            done
+            count_end=$(find "${INSTALL_BIN}" -name '*.dll' | wc -l)
           done
           echo "::endgroup::"
 
@@ -197,15 +206,19 @@ jobs:
             if [ -d "$src" ]; then
               mkdir -p "$dst"
               cp -u "$src"/*.dll "$dst/" 2>/dev/null || true
+              # Bundle deps for the plugins (they might need different DLLs)
               for pdll in "$dst"/*.dll; do
                 [ -f "$pdll" ] && bundle_deps "$pdll"
               done
             fi
           done
+          
+          # Qt configuration file
           cat > "${INSTALL_BIN}/qt.conf" << 'QTCONF'
           [Paths]
           Plugins = .
           QTCONF
+          # Remove leading whitespace from qt.conf
           sed -i 's/^[[:space:]]*//' "${INSTALL_BIN}/qt.conf"
           echo "::endgroup::"
 
@@ -218,8 +231,6 @@ jobs:
           echo "::endgroup::"
 
           echo "=== Total bundled DLLs in bin/: $(find "${INSTALL_BIN}" -name '*.dll' | wc -l) ==="
-          echo "=== Qt6 plugin dirs: $(ls -d "${INSTALL_BIN}"/platforms "${INSTALL_BIN}"/styles "${INSTALL_BIN}"/imageformats 2>/dev/null | tr '\n' ' ') ==="
-
       # ── 8. Package with CPack ─────────────────────────────────────────
       - name: Package (NSIS + ZIP)
         run: |
