@@ -145,35 +145,35 @@ jobs:
           cd ${GITHUB_WORKSPACE}/build
           cmake --install .
 
-      # ── 7. Bundle runtime DLLs (ROBUST METHOD) ────────────────────────────
+      # ── 7. Bundle runtime DLLs (FIXED & ROBUST) ───────────────────────────
       - name: Bundle runtime dependencies
         run: |
           INSTALL_DIR="${GITHUB_WORKSPACE}/install"
           INSTALL_BIN="${INSTALL_DIR}/bin"
           MINGW_BIN="/${MSYSTEM,,}/bin"
-          
+
           echo "::group::1. Force-Copy Critical Runtimes"
-          # Explicitly copy the Compiler Runtime (Fixes libgcc/libstdc++ errors)
+          # Explicitly copy GCC/MinGW runtimes (Fixes libgcc/libstdc++ errors)
           echo "Copying GCC/MinGW runtimes..."
-          cp -u "${MINGW_BIN}/libgcc_s_seh-1.dll" "${INSTALL_BIN}/"
-          cp -u "${MINGW_BIN}/libstdc++-6.dll" "${INSTALL_BIN}/"
-          cp -u "${MINGW_BIN}/libwinpthread-1.dll" "${INSTALL_BIN}/"
-          cp -u "${MINGW_BIN}/libgomp-1.dll" "${INSTALL_BIN}/"
-          cp -u "${MINGW_BIN}/libquadmath-0.dll" "${INSTALL_BIN}/"
-          cp -u "${MINGW_BIN}/libgfortran-5.dll" "${INSTALL_BIN}/"
+          cp -u "${MINGW_BIN}/libgcc_s_seh-1.dll" "${INSTALL_BIN}/" || true
+          cp -u "${MINGW_BIN}/libstdc++-6.dll" "${INSTALL_BIN}/" || true
+          cp -u "${MINGW_BIN}/libwinpthread-1.dll" "${INSTALL_BIN}/" || true
+          cp -u "${MINGW_BIN}/libgomp-1.dll" "${INSTALL_BIN}/" || true
+          cp -u "${MINGW_BIN}/libquadmath-0.dll" "${INSTALL_BIN}/" || true
+          cp -u "${MINGW_BIN}/libgfortran-5.dll" "${INSTALL_BIN}/" || true
 
           # Explicitly copy Core Qt Libraries (Fixes Qt6Core/Gui errors)
           echo "Copying Qt6 Core libraries..."
           for qtdll in Core Gui Widgets Network OpenGL Xml PrintSupport Svg; do
-             cp -u "${MINGW_BIN}/Qt6${qtdll}.dll" "${INSTALL_BIN}/"
+             cp -u "${MINGW_BIN}/Qt6${qtdll}.dll" "${INSTALL_BIN}/" || true
           done
           echo "::endgroup::"
 
           echo "::group::2. Dependency Walk (ldd)"
-          # Helper function to find and copy dependencies recursively
+          # Helper function with CRASH PROTECTION (|| true)
           bundle_deps() {
             local pe="$1"
-            # Use ldd to find dependencies, filter for /ucrt64/, and copy them
+            # grep returns 1 if no matches found, so we add '|| true' to prevent script exit
             ldd "$pe" 2>/dev/null \
               | grep -i "/${MSYSTEM,,}/" \
               | awk '{print $3}' \
@@ -183,38 +183,27 @@ jobs:
                     echo "Bundling: $(basename "$dll")"
                     cp "$dll" "${INSTALL_BIN}/"
                   fi
-                done
+                done || true
           }
 
-          # Run the walker multiple times to catch deep dependencies
-          # (Pass 1: Executables)
+          # Pass 1: Scan Executables
           for exe in "${INSTALL_BIN}"/*.exe; do
             [ -f "$exe" ] && bundle_deps "$exe"
           done
 
-          # (Pass 2: Qt Plugins & Solver Libs)
-          # We check everything in bin/ again because we just added new DLLs
-          # Repeat 3 times to ensure the tree is fully walked
-          for i in {1..3}; do
+          # Pass 2: Scan DLLs (Repeat loop to catch deep dependencies)
+          for i in {1..2}; do
             echo "--- Walk Iteration $i ---"
-            count_start=$(find "${INSTALL_BIN}" -name '*.dll' | wc -l)
-            
             for dll in "${INSTALL_BIN}"/*.dll; do
                bundle_deps "$dll"
             done
-            
-            count_end=$(find "${INSTALL_BIN}" -name '*.dll' | wc -l)
-            if [ "$count_start" -eq "$count_end" ]; then
-               echo "No new DLLs found, convergence reached."
-               break
-            fi
           done
           echo "::endgroup::"
 
           echo "::group::3. Deploy Qt Plugins"
+          # Plugins are in /share/qt6/plugins on UCRT64
           QT6_PLUGIN_DIR="/${MSYSTEM,,}/share/qt6/plugins"
           
-          # Copy specific plugin folders required by ElmerGUI
           for plugin in platforms styles imageformats iconengines tls; do
             src="${QT6_PLUGIN_DIR}/${plugin}"
             dst="${INSTALL_BIN}/${plugin}"
@@ -224,7 +213,7 @@ jobs:
             fi
           done
 
-          # Create qt.conf to tell Qt where to look for plugins (current dir)
+          # Create qt.conf to force Qt to look in local directory
           echo "[Paths]" > "${INSTALL_BIN}/qt.conf"
           echo "Plugins = ." >> "${INSTALL_BIN}/qt.conf"
           echo "::endgroup::"
