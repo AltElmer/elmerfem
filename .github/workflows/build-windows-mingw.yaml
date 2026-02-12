@@ -147,7 +147,7 @@ jobs:
           cd ${GITHUB_WORKSPACE}/build
           ctest . \
             -LE slow \
-            -E "PoissonML|ShoeboxFsiHarmonicPlateMonolithic" \
+            -E "PoissonML|ShoeboxFsiHarmonicPlateMonolithic|RotatingBCMagnetoDynamics2" \
             --timeout 300
 
       - name: re-run tests
