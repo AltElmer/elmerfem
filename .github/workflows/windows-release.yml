@@ -145,92 +145,98 @@ jobs:
           cd ${GITHUB_WORKSPACE}/build
           cmake --install .
 
-      # ── 7. Bundle runtime DLLs ────────────────────────────────────────
+      # ── 7. Bundle runtime DLLs (ROBUST METHOD) ────────────────────────────
       - name: Bundle runtime dependencies
         run: |
           INSTALL_DIR="${GITHUB_WORKSPACE}/install"
           INSTALL_BIN="${INSTALL_DIR}/bin"
           MINGW_BIN="/${MSYSTEM,,}/bin"
-          MINGW_LIB="/${MSYSTEM,,}/lib"
+          
+          echo "::group::1. Force-Copy Critical Runtimes"
+          # Explicitly copy the Compiler Runtime (Fixes libgcc/libstdc++ errors)
+          echo "Copying GCC/MinGW runtimes..."
+          cp -u "${MINGW_BIN}/libgcc_s_seh-1.dll" "${INSTALL_BIN}/"
+          cp -u "${MINGW_BIN}/libstdc++-6.dll" "${INSTALL_BIN}/"
+          cp -u "${MINGW_BIN}/libwinpthread-1.dll" "${INSTALL_BIN}/"
+          cp -u "${MINGW_BIN}/libgomp-1.dll" "${INSTALL_BIN}/"
+          cp -u "${MINGW_BIN}/libquadmath-0.dll" "${INSTALL_BIN}/"
+          cp -u "${MINGW_BIN}/libgfortran-5.dll" "${INSTALL_BIN}/"
 
-          # Helper: copy MSYS2 DLL deps of a PE file into INSTALL_BIN
-          # CHANGED: Switched from ntldd to ldd for reliable path output
+          # Explicitly copy Core Qt Libraries (Fixes Qt6Core/Gui errors)
+          echo "Copying Qt6 Core libraries..."
+          for qtdll in Core Gui Widgets Network OpenGL Xml PrintSupport Svg; do
+             cp -u "${MINGW_BIN}/Qt6${qtdll}.dll" "${INSTALL_BIN}/"
+          done
+          echo "::endgroup::"
+
+          echo "::group::2. Dependency Walk (ldd)"
+          # Helper function to find and copy dependencies recursively
           bundle_deps() {
             local pe="$1"
-            # ldd outputs: "DLLNAME => /path/to/dll (address)"
-            # We grep for the system path (e.g., /ucrt64/) to avoid system32 dlls
+            # Use ldd to find dependencies, filter for /ucrt64/, and copy them
             ldd "$pe" 2>/dev/null \
               | grep -i "/${MSYSTEM,,}/" \
               | awk '{print $3}' \
+              | sort -u \
               | while IFS= read -r dll; do
-                  # Check if file exists and copy if not already present
-                  if [ -f "$dll" ]; then
-                    cp -u "$dll" "${INSTALL_BIN}/"
+                  if [ -f "$dll" ] && [ ! -f "${INSTALL_BIN}/$(basename "$dll")" ]; then
+                    echo "Bundling: $(basename "$dll")"
+                    cp "$dll" "${INSTALL_BIN}/"
                   fi
-                done || true
+                done
           }
 
-          echo "::group::Pass 1 — bin/ executables and DLLs"
-          for pe in "${INSTALL_BIN}"/*.exe "${INSTALL_BIN}"/*.dll; do
-            [ -f "$pe" ] && bundle_deps "$pe"
+          # Run the walker multiple times to catch deep dependencies
+          # (Pass 1: Executables)
+          for exe in "${INSTALL_BIN}"/*.exe; do
+            [ -f "$exe" ] && bundle_deps "$exe"
           done
-          echo "::endgroup::"
 
-          echo "::group::Pass 2 — solver module DLLs"
-          SOLVER_LIB="${INSTALL_DIR}/share/elmersolver/lib"
-          if [ -d "$SOLVER_LIB" ]; then
-            for dll in "${SOLVER_LIB}"/*.dll; do
-              [ -f "$dll" ] && bundle_deps "$dll"
-            done
-          fi
-          echo "::endgroup::"
-
-          echo "::group::Pass 3 — transitive deps of newly copied DLLs"
-          # Iterate repeatedly until no new DLLs are added to handle deep dependency trees
-          count_start=0
-          count_end=$(find "${INSTALL_BIN}" -name '*.dll' | wc -l)
-          while [ "$count_start" -ne "$count_end" ]; do
-            count_start=$count_end
+          # (Pass 2: Qt Plugins & Solver Libs)
+          # We check everything in bin/ again because we just added new DLLs
+          # Repeat 3 times to ensure the tree is fully walked
+          for i in {1..3}; do
+            echo "--- Walk Iteration $i ---"
+            count_start=$(find "${INSTALL_BIN}" -name '*.dll' | wc -l)
+            
             for dll in "${INSTALL_BIN}"/*.dll; do
-              [ -f "$dll" ] && bundle_deps "$dll"
+               bundle_deps "$dll"
             done
+            
             count_end=$(find "${INSTALL_BIN}" -name '*.dll' | wc -l)
+            if [ "$count_start" -eq "$count_end" ]; then
+               echo "No new DLLs found, convergence reached."
+               break
+            fi
           done
           echo "::endgroup::"
 
-          echo "::group::Deploy Qt6 plugins"
-          QT6_PLUGIN_DIR="${MINGW_LIB}/qt6/plugins"
-          for plugin_type in platforms styles imageformats iconengines generic tls networkinformation; do
-            src="${QT6_PLUGIN_DIR}/${plugin_type}"
-            dst="${INSTALL_BIN}/${plugin_type}"
+          echo "::group::3. Deploy Qt Plugins"
+          QT6_PLUGIN_DIR="/${MSYSTEM,,}/share/qt6/plugins"
+          
+          # Copy specific plugin folders required by ElmerGUI
+          for plugin in platforms styles imageformats iconengines tls; do
+            src="${QT6_PLUGIN_DIR}/${plugin}"
+            dst="${INSTALL_BIN}/${plugin}"
             if [ -d "$src" ]; then
               mkdir -p "$dst"
               cp -u "$src"/*.dll "$dst/" 2>/dev/null || true
-              # Bundle deps for the plugins (they might need different DLLs)
-              for pdll in "$dst"/*.dll; do
-                [ -f "$pdll" ] && bundle_deps "$pdll"
-              done
             fi
           done
-          
-          # Qt configuration file
-          cat > "${INSTALL_BIN}/qt.conf" << 'QTCONF'
-          [Paths]
-          Plugins = .
-          QTCONF
-          # Remove leading whitespace from qt.conf
-          sed -i 's/^[[:space:]]*//' "${INSTALL_BIN}/qt.conf"
+
+          # Create qt.conf to tell Qt where to look for plugins (current dir)
+          echo "[Paths]" > "${INSTALL_BIN}/qt.conf"
+          echo "Plugins = ." >> "${INSTALL_BIN}/qt.conf"
           echo "::endgroup::"
 
-          echo "::group::Bundle MS-MPI runtime"
+          echo "::group::4. Bundle MS-MPI"
           if [ -n "${MSMPI_BIN:-}" ]; then
             MSMPI_UNIX="$(cygpath -u "${MSMPI_BIN}")"
             cp -un "${MSMPI_UNIX}/mpiexec.exe" "${INSTALL_BIN}/" 2>/dev/null || true
             cp -un "${MSMPI_UNIX}/msmpi.dll" "${INSTALL_BIN}/" 2>/dev/null || true
           fi
           echo "::endgroup::"
-
-          echo "=== Total bundled DLLs in bin/: $(find "${INSTALL_BIN}" -name '*.dll' | wc -l) ==="
+          
       # ── 8. Package with CPack ─────────────────────────────────────────
       - name: Package (NSIS + ZIP)
         run: |
