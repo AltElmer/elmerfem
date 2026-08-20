@@ -1,7 +1,7 @@
 name: ci
 on:
   push:
-    branches: [devel]
+    branches: [devel, ci/consolidate-test]
     paths-ignore:
       - '**.nix'
       - 'flake.lock'
