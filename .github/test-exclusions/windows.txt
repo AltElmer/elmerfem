@@ -1,8 +1,0 @@
-# ElmerFEM Windows test exclusions for ctest -E
-# One test name per line (combined with | for regex alternation)
-
-# Bundled UMFPACK segfault on UCRT64
-PoissonML
-
-# MPI job tree teardown race condition (error 1726)
-ShoeboxFsiHarmonicPlateMonolithic

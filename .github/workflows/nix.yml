@@ -1,39 +1,22 @@
 name: nix
 on:
   push:
-    branches: [devel]
   pull_request:
   workflow_dispatch:
-
+concurrency:
+  group: nix-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) || format('{0}-{1}', github.event_name, github.run_id) }}
+  cancel-in-progress: true
 jobs:
-
-  check:
+  cache:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: nixbuild/nix-quick-install-action@v30
-        with:
-          nix_path: nixpkgs=channel:nixos-25.05
-      - uses: nix-community/cache-nix-action@v6
+      - uses: actions/checkout@v7
+      - uses: nixbuild/nix-quick-install-action@v35
+      - uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}
-      - name: nix flake check
-        run: nix flake check -L
-
-  build-cache:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: nixbuild/nix-quick-install-action@v30
-        with:
-          nix_path: nixpkgs=channel:nixos-25.05
-      - uses: nix-community/cache-nix-action@v6
-        with:
-          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}
-      - uses: cachix/cachix-action@v14
+      - uses: cachix/cachix-action@v17
         with:
           name: elmerfem
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
@@ -42,3 +25,16 @@ jobs:
           nix build -L
           nix build .#gui -L
           nix build .#full -L
+    if: (github.event_name == 'push' && github.ref_name == 'devel') || github.event_name == 'workflow_dispatch'
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: nixbuild/nix-quick-install-action@v35
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}
+      - name: nix flake check
+        run: nix flake check -L
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
