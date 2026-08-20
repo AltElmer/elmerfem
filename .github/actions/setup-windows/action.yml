@@ -29,6 +29,9 @@ runs:
           qt6-declarative:p
           qwt-qt6:p
           vtk:p
+          seacas:p
+          exprtk:p
+          nlohmann-json:p
           adios2:p
           anari-sdk:p
           boost:p
