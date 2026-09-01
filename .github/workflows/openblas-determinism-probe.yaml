@@ -68,16 +68,22 @@ jobs:
           ctest -N -R mgdyn_harmonic_wire
           echo ""
 
+          # The solver's stdout never reaches ctest: test_macros.cmake captures
+          # it with EXECUTE_PROCESS(OUTPUT_VARIABLE ...) and writes it to
+          # test-stdout.log in the test's binary directory. Reading ctest's own
+          # output finds nothing when the test passes, which is why an earlier
+          # version of this probe returned empty for every run.
+          LOG=fem/tests/mgdyn_harmonic_wire/test-stdout.log
+
           run_once () {
-            # Keep the full log so a failure here is visible instead of being
-            # swallowed into an empty result.
-            ctest -R '^mgdyn_harmonic_wire$' -V > /tmp/run.log 2>&1
+            rm -f "$LOG"
+            ctest -R '^mgdyn_harmonic_wire$' > /tmp/run.log 2>&1
             local rc=$?
             local norm
-            norm=$(grep -E 'CompareToReferenceSolution: Solver 4' /tmp/run.log \
+            norm=$(grep -E 'CompareToReferenceSolution: Solver 4' "$LOG" 2>/dev/null \
                    | head -1 | sed -E 's/.*Norm = ([0-9.E+-]+).*/\1/')
             if [ -z "$norm" ]; then
-              echo "NO NORM (ctest rc=$rc) - last lines of output:"
+              echo "NO NORM (ctest rc=$rc) - is $LOG present? $([ -f "$LOG" ] && echo yes || echo no)"
               tail -5 /tmp/run.log | sed 's/^/      /'
             else
               echo "$norm (rc=$rc)"
