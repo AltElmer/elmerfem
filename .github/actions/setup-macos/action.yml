@@ -8,6 +8,10 @@ inputs:
   os:
     description: 'Runner OS label (e.g. macos-14, macos-15-intel)'
     required: true
+  vtk:
+    description: 'Install vtk and opencascade: true or false'
+    required: false
+    default: 'true'
 
 runs:
   using: composite
@@ -16,6 +20,7 @@ runs:
       shell: bash
       env:
         OPENMP: ${{ inputs.openmp }}
+        WITH_VTK: ${{ inputs.vtk }}
       run: |
         brew update
         # Resolve Homebrew Python conflicts on GHA runners
@@ -23,7 +28,14 @@ runs:
         # gfortran needs gcc reinstall to work correctly
         brew reinstall gcc
 
-        PKGS="cmake openblas open-mpi qwt vtk opencascade expat"
+        PKGS="cmake openblas open-mpi qwt expat"
+        # Homebrew publishes no Intel macOS bottle for vtk: as of vtk 9.7.0 the
+        # bottles are arm64_tahoe, arm64_sequoia, arm64_sonoma, arm64_linux and
+        # x86_64_linux only, so "brew install vtk" fails there with
+        # "vtk: no bottle available!" and takes the whole step with it.
+        if [ "$WITH_VTK" != "false" ]; then
+          PKGS="$PKGS vtk opencascade"
+        fi
         if [ "$OPENMP" = "ON" ]; then
           PKGS="$PKGS libomp suitesparse"
         fi

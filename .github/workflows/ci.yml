@@ -129,6 +129,9 @@ jobs:
             deps: external
             fast-gate: false
             schedule-only: false
+            # Homebrew has no Intel macOS bottle for vtk, so this runner builds
+            # without VtkPost. See the configure step for why WITH_OCC follows.
+            vtk: false
             cmake-extra: >-
               -DCMAKE_BUILD_TYPE=RelWithDebInfo
               -DBLA_VENDOR=OpenBLAS
@@ -179,7 +182,11 @@ jobs:
             platform: linux
             compiler: clang
             mpi: ON
-            openmp: ON
+            # OpenMP is deliberately OFF for clang, matching what the
+            # ubuntu-clang-full workflow this replaces does and documents: the
+            # runner image ships no libomp, so FIND_PACKAGE(OpenMP) fails with
+            # "Could NOT find OpenMP_C (missing: OpenMP_C_LIB_NAMES)".
+            openmp: OFF
             deps: external
             fast-gate: false
             schedule-only: true
@@ -253,6 +260,10 @@ jobs:
         with:
           openmp: ${{ matrix.openmp }}
           os: ${{ matrix.os }}
+          # Passed raw and compared as a string in the action. Do not write
+          # "matrix.vtk == false" here: GitHub casts null and false both to 0,
+          # so that is true for every entry that omits the key.
+          vtk: ${{ matrix.vtk }}
 
       - name: setup (Windows)
         if: steps.gate.outputs.run == 'true' && matrix.platform == 'windows'
@@ -287,6 +298,29 @@ jobs:
         run: |
           mkdir ${GITHUB_WORKSPACE}/build
           cd ${GITHUB_WORKSPACE}/build
+
+          # Built as a bash array rather than a ${{ }} expression: a multi-line
+          # expression injects literal newlines into this script and truncates
+          # the cmake command, and a single-line one would be word split, losing
+          # the spaces inside the OpenMP flag values.
+          _omp=(-DWITH_OpenMP=OFF)
+          if [ "${{ matrix.openmp }}" = "ON" ]; then
+            _omp=(-DWITH_OpenMP=ON
+                  "-DOpenMP_C_FLAGS=-Xclang -fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include"
+                  "-DOpenMP_CXX_FLAGS=-Xclang -fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include"
+                  "-DOpenMP_Fortran_FLAGS=-fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include")
+          fi
+
+          # Homebrew publishes no Intel macOS bottle for vtk (as of 9.7.0 the
+          # tags are arm64_* and x86_64_linux only), so VtkPost is left out
+          # there. WITH_OCC has to go too: ElmerGUI/CMakeLists.txt sets
+          # WITH_VTK back to TRUE whenever WITH_OCC is on, which makes
+          # FIND_PACKAGE(VTK REQUIRED) fail even with -DWITH_VTK=OFF.
+          _vtk=(-DWITH_VTK=ON -DWITH_OCC=ON)
+          if [ "${{ matrix.vtk }}" = "false" ]; then
+            _vtk=(-DWITH_VTK=OFF -DWITH_OCC=OFF)
+          fi
+
           cmake \
             ${{ matrix.cmake-extra }} \
             -DCMAKE_C_COMPILER=clang \
@@ -294,20 +328,14 @@ jobs:
             -DCMAKE_Fortran_COMPILER=gfortran \
             -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/usr" \
             -DCMAKE_PREFIX_PATH="$([ "${{ matrix.openmp }}" = "ON" ] && echo "${HOMEBREW_PREFIX}/opt/libomp;")${HOMEBREW_PREFIX}/opt/openblas;${HOMEBREW_PREFIX}/opt/qt;${HOMEBREW_PREFIX}/opt/qwt" \
-            ${{ matrix.openmp == 'ON'
-              && '-DWITH_OpenMP=ON
-                  -DOpenMP_C_FLAGS="-Xclang -fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include"
-                  -DOpenMP_CXX_FLAGS="-Xclang -fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include"
-                  -DOpenMP_Fortran_FLAGS="-fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include"'
-              || '-DWITH_OpenMP=OFF' }} \
+            "${_omp[@]}" \
+            "${_vtk[@]}" \
             -DWITH_LUA=ON \
             -DWITH_MPI=ON -DMPI_TEST_MAXPROC=2 \
             -DWITH_ElmerIce=ON \
             -DWITH_ELMERGUI=ON -DWITH_QT6=ON \
             -DQWT_INCLUDE_DIR="${HOMEBREW_PREFIX}/opt/qwt/lib/qwt.framework/Headers" \
-            -DWITH_VTK=ON \
             -DEXPAT_INCLUDE_DIR="${HOMEBREW_PREFIX}/opt/expat/include" \
-            -DWITH_OCC=ON \
             -DWITH_MATC=ON -DWITH_PARAVIEW=ON \
             -DCREATE_PKGCONFIG_FILE=ON \
             ..
@@ -332,7 +360,7 @@ jobs:
             -DParMetis_LIBRARIES="$(pkg-config --libs parmetis)" \
             -DParMetis_INCLUDE_DIR="$(pkg-config --cflags parmetis)" \
             -DWITH_Mumps=ON \
-            -DMumps_LIBRARIES="$(pkg-config -libs mumps-dmo);$(pkg-config -libs mumps-zmo);$(pkg-config -libs mumps-smo);$(pkg-config -libs mumps-cmo)" \
+            -DMumps_LIBRARIES="$(pkg-config --libs mumps-dmo mumps-zmo mumps-smo mumps-cmo)" \
             -DMumps_INCLUDE_DIR="$(pkg-config --variable=includedir mumps-dmo);$(pkg-config --variable=includedir mumps-zmo);$(pkg-config --variable=includedir mumps-smo);$(pkg-config --variable=includedir mumps-cmo)" \
             -DWITH_ElmerIce=ON \
             -DWITH_ELMERGUI=ON -DWITH_QT6=ON \
