@@ -15,6 +15,11 @@ name: openblas-determinism-probe
 # support it.
 
 on:
+  # Push rather than workflow_dispatch: dispatch is only offered for workflows
+  # present on the default branch, and this one deliberately lives on a scratch
+  # branch. Scoped to that branch so it cannot fire anywhere else.
+  push:
+    branches: [ci/openblas-determinism-probe]
   workflow_dispatch:
 
 jobs:
