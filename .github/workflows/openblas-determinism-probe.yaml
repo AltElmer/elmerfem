@@ -54,13 +54,34 @@ jobs:
         env:
           OMP_NUM_THREADS: 1
         run: |
+          set +e
+
+          # Real core count. GNU nproc honours OMP_NUM_THREADS, so plain
+          # "nproc" reports 1 inside this step and would hide how many threads
+          # OpenBLAS could actually use.
+          echo "OMP_NUM_THREADS=${OMP_NUM_THREADS}"
+          echo "nproc (clamped by OMP_NUM_THREADS): $(nproc)"
+          echo "real cores: $(getconf _NPROCESSORS_ONLN)"
+          echo ""
+
+          echo "=== does ctest see the test? ==="
+          ctest -N -R mgdyn_harmonic_wire
+          echo ""
+
           run_once () {
-            # -V so the solver output is printed even when the test passes;
-            # without it ctest is silent on success and there is no norm to read.
-            ctest -R '^mgdyn_harmonic_wire$' -V 2>&1 \
-              | grep -E 'CompareToReferenceSolution: Solver 4' \
-              | head -1 \
-              | sed -E 's/.*Norm = ([0-9.E+-]+).*/\1/'
+            # Keep the full log so a failure here is visible instead of being
+            # swallowed into an empty result.
+            ctest -R '^mgdyn_harmonic_wire$' -V > /tmp/run.log 2>&1
+            local rc=$?
+            local norm
+            norm=$(grep -E 'CompareToReferenceSolution: Solver 4' /tmp/run.log \
+                   | head -1 | sed -E 's/.*Norm = ([0-9.E+-]+).*/\1/')
+            if [ -z "$norm" ]; then
+              echo "NO NORM (ctest rc=$rc) - last lines of output:"
+              tail -5 /tmp/run.log | sed 's/^/      /'
+            else
+              echo "$norm (rc=$rc)"
+            fi
           }
 
           echo "=== arm A: OPENBLAS_NUM_THREADS unset (current CI behaviour) ==="
@@ -71,6 +92,3 @@ jobs:
           echo "=== arm B: OPENBLAS_NUM_THREADS=1 (proposed fix) ==="
           export OPENBLAS_NUM_THREADS=1
           for i in 1 2 3 4 5; do echo "  run $i: $(run_once)"; done
-
-          echo ""
-          echo "nproc on this runner: $(nproc)"
