@@ -353,7 +353,7 @@ jobs:
             -DWITH_OpenMP=ON \
             -DWITH_LUA=ON \
             -DWITH_MPI=ON \
-            -DMPI_TEST_MAXPROC=$(nproc) \
+            -DMPI_TEST_MAXPROC=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc) \
             -DMPIEXEC_EXECUTABLE="$(cygpath -m "${MSMPI_BIN}")/mpiexec.exe" \
             -DWITH_Zoltan=ON \
             -DCMAKE_C_FLAGS="-Wno-error=incompatible-pointer-types" \
@@ -375,7 +375,10 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: |
           cd ${GITHUB_WORKSPACE}/build
-          NPROC=$(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 2)
+          # getconf rather than nproc: GNU nproc honours OMP_NUM_THREADS, so in
+          # a step that pins it to 1 nproc reports 1 core whatever the hardware,
+          # and "-j${NPROC}" silently becomes -j1.
+          NPROC=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || nproc 2>/dev/null || echo 2)
           cmake --build . -j${NPROC}
 
       # ── 6. Install ───────────────────────────────────────────
@@ -406,7 +409,10 @@ jobs:
           OPENBLAS_NUM_THREADS: 1
         run: |
           cd ${GITHUB_WORKSPACE}/build
-          NPROC=$(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 2)
+          # getconf rather than nproc: GNU nproc honours OMP_NUM_THREADS, so in
+          # a step that pins it to 1 nproc reports 1 core whatever the hardware,
+          # and "-j${NPROC}" silently becomes -j1.
+          NPROC=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || nproc 2>/dev/null || echo 2)
 
           # Build exclusion regex from platform-specific file
           EXCLUDE_FILE="${GITHUB_WORKSPACE}/.github/test-exclusions/${{ matrix.platform }}.txt"
