@@ -24,8 +24,8 @@
 MODULE VtuXMLFile
 
   USE DefUtils 
-  USE MeshUtils
-  USE SolverUtils
+  USE MeshBasics
+  USE SolverBasics
   USE SaveUtils
   USE MainUtils
   USE ElementDescription
@@ -85,7 +85,7 @@ CONTAINS
   ! and honoring discontinuities. 
   !-----------------------------------------------------------------------
   SUBROUTINE AverageBodyFields( Mesh ) 
-    USE MeshUtils, ONLY : CalculateBodyAverage    
+    USE MeshBasics, ONLY : CalculateBodyAverage    
     TYPE(Mesh_t), POINTER :: Mesh
 
     TYPE(Variable_t), POINTER :: Var, Var1
@@ -258,7 +258,7 @@ SUBROUTINE VtuOutputSolver( Model,Solver,dt,TransientSimulation )
 !------------------------------------------------------------------------------
 
   USE VtuXMLFile
-  USE MeshUtils, ONLY : CalculateBodyAverage
+  USE MeshBasics, ONLY : CalculateBodyAverage
     
   IMPLICIT NONE
   TYPE(Solver_t) :: Solver
@@ -719,7 +719,7 @@ CONTAINS
     INTEGER, PARAMETER :: VtuUnit = 58
     INTEGER :: i,ii,j,jj,k,dofs,Rank,n,m,dim,vari,sdofs,dispdofs, dispBdofs, Offset, &
         NoFields, NoFields2, IndField, iField, iField0, NoModes, NoModes2, NoFieldsWritten, &
-        cumn, iostat
+        cumn, iostat, NoTooBig, nofs, nn
     CHARACTER(LEN=1024) :: Txt, ScalarFieldName, VectorFieldName, TensorFieldName, &
         FieldName, FieldNameB, OutStr
     CHARACTER :: lf
@@ -782,6 +782,9 @@ CONTAINS
     ! VTU seemingly only works with 3D cases, so enforce it
     dim = 3
 
+    ! Dirty fix for the peculiar elements that use more than one node, e.g. "Element = n:2 e:1"
+    nn = MAX(1,Model % Mesh % MaxNDofs ) 
+    
 
     WRITE( OutStr,'(A)') '<?xml version="1.0"?>'//lf
     CALL AscBinStrWrite( OutStr ) 
@@ -1225,10 +1228,11 @@ CONTAINS
                   CALL Fatal(Caller,'InvFieldPerm not associated!')
                 END IF
               END IF
+              NoTooBig = 0
+              nofs = 0
               
               IF( BinaryOutput ) WRITE( VtuUnit ) k
-
-              vals = 0
+              
               DO ii = 1, NumberOfDofNodes
 
                 IF( NoPermutation ) THEN
@@ -1238,20 +1242,27 @@ CONTAINS
                 END IF
 
                 IF( ASSOCIATED( Perm ) .AND. LagN == 0 ) THEN
-                  j = Perm(i)
+                  j = 0
+                  IF(i<1 .OR. i>SIZE(Perm)) THEN
+                    NoTooBig = NoTooBig + 1
+                  ELSE
+                    j = Perm(nn*(i-1)+1)
+                  END IF
                 ELSE
                   j = i
                 END IF
 
+                IF(j>0) nofs = nofs + 1
+                
                 Use2 = .FALSE.
                 IF( ComplementExists ) THEN
                   IF( j == 0 ) THEN
                     Use2 = .TRUE. 
-                    j = PermB(i)
+                    j = PermB(nn*(i-1)+1)
                   END IF
                 END IF
-
                 
+                vals = 0.0_dp
                 DO k=1,sdofs              
                   IF(j==0 .OR. k > dofs) THEN
                     vals(k) = 0.0_dp
@@ -1346,6 +1357,14 @@ CONTAINS
 
               CALL AscBinRealWrite( 0.0_dp, .TRUE. )
 
+              IF(NoTooBig > 0) THEN
+                CALL Fatal(Caller,'Too big index for Perm in '//I2S(NoTooBig)//' nodes for '//TRIM(FieldName))
+              END IF
+              IF(ASSOCIATED(Perm)) THEN
+                CALL Info(Caller,'Number of nonzeros for "'&
+                    //TRIM(FieldName)//'" is '//I2S(nofs)//' of '//I2S(NumberOfDofNodes),Level=15)
+              END IF
+                
             END IF
 
             IF( AsciiOutput ) THEN
@@ -2129,6 +2148,30 @@ CONTAINS
       IF(ASSOCIATED(TmpSolDg2)) CALL ReleaseVariableList( TmpSolDg2 )
       IF(ASSOCIATED(TmpSolDg3)) CALL ReleaseVariableList( TmpSolDg3 )      
     END IF
+
+    BLOCK
+      INTERFACE
+        SUBROUTINE setlocale(category,locale) BIND(c,name="setlocale")
+          USE iso_c_binding
+          integer(c_int), value :: category
+          character(kind=c_char), dimension(*) :: locale
+        END SUBROUTINE  setlocale
+      END INTERFACE
+
+      LOGICAL :: reset_locale, Found
+
+      reset_locale=GetLogical(Solver % Values,'Reset locale after vtu-output',Found)
+      IF (.NOT. Found) &
+        reset_locale=GetLogical(Model % Simulation,'Reset locale after vtu-output',Found)
+
+      ! Restore Elmer's canonical "C" locale (period-decimal), NOT "en_US.UTF-8".
+      ! The former UTF-8 codepage locale intermittently trips a UCRT
+      ! invalid-parameter fast-fail (0xC0000409) inside libgfortran's locale
+      ! save/restore during subsequent formatted I/O (e.g. SaveScalars, the
+      ! nonlinear-iteration prints) -- the same crash the GeneralUtils.F90
+      ! sif-reading path was fixed for. "C" is canonical and always valid.
+      IF (.NOT.Found .OR. reset_locale) CALL setlocale(0,"C"//CHAR(0))
+    END BLOCK
     
     CALL Info(Caller,'Finished writing file',Level=15)
     
@@ -2165,7 +2208,7 @@ CONTAINS
       WRITE( Str,'(A)') '<VTKFile type="Collection" version="0.1" byte_order="LittleEndian"><Collection>'
       n = LEN_TRIM( Str ) 
       
-      WRITE( Str,'(A,ES16.7,A,I0,A)') '<DataSet timestep="',time,&
+      WRITE( Str,'(A,G0,A,I0,A)') '<DataSet timestep="',time,&
         '" group="" part="',GroupId,'" file="'//TRIM(DataSetFile)//'"/>'
       n = MAX( LEN_TRIM( Str ), n ) 
 
@@ -2193,7 +2236,7 @@ CONTAINS
     END IF
 
     nLine = nLine + 1
-    WRITE( VtuUnit,'(A,ES12.3,A,I0,A)',REC=nLine) lf//'<DataSet timestep="',time,&
+    WRITE( VtuUnit,'(A,G0,A,I0,A)',REC=nLine) lf//'<DataSet timestep="',time,&
         '" group="" part="',GroupId,'" file="'//TRIM(DataSetFile)//'"/>'
     WRITE( VtuUnit,'(A)',REC=nLine+1) lf//'</Collection></VTKFile>'
 

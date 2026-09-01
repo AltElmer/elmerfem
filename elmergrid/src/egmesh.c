@@ -411,79 +411,6 @@ void GetElementSide(int element,int side,int normal,
 
     break;
 
-  case 706: /* Linear wedge element */
-    if(side < 3) {
-      *sideelemtype = 404;
-      ind[0] = elemind[side];
-      ind[1] = elemind[(side+1)%3];
-      ind[2] = elemind[(side+1)%3+3];
-      ind[3] = elemind[side+3];  
-    }
-    else if (side < 5) {
-      *sideelemtype = 303;          
-      for(i=0;i<3;i++)
-	ind[i] = elemind[3*(side-3)+i];
-    }
-    else if(side < 14) {
-      *sideelemtype = 202;
-      if(side < 8) {
-	ind[0] = elemind[side-5];
-	ind[1] = elemind[(side-4)%3];
-      }
-      if(side < 11) {
-	ind[0] = elemind[3+side-8];
-	ind[1] = elemind[3+(side-7)%3];
-      }
-      else {
-	ind[0] = elemind[side-11];
-	ind[1] = elemind[3+side-11];	
-      }
-    }
-    else if (side < 20) {
-      *sideelemtype = 101;
-      ind[0] = elemind[side-14];      
-    }
-    break;
-
-  case 715: /* Quadratic wedge element */
-    if(side < 3) {
-      *sideelemtype = 408;
-      ind[0] = elemind[side];
-      ind[1] = elemind[(side+1)%3];
-      ind[2] = elemind[(side+1)%3+3];
-      ind[3] = elemind[side+3];  
-      ind[4] = elemind[6+side];        
-      ind[5] = elemind[12+(side+1)%3];   
-      ind[6] = elemind[9+side];      
-      ind[7] = elemind[12+side];
-    }
-    else if (side < 5) {
-      *sideelemtype = 306;          
-      for(i=0;i<3;i++) {
-	ind[i] = elemind[3*(side-3)+i];
-	ind[i+3] = elemind[3*(side-3)+6+i];
-      }      
-    }
-    else if(side < 14) {
-      *sideelemtype = 202;
-      if(side < 8) {
-	ind[0] = elemind[side-5];
-	ind[1] = elemind[(side-4)%3];
-      }
-      if(side < 11) {
-	ind[0] = elemind[3+side-8];
-	ind[1] = elemind[3+(side-7)%3];
-      }
-      else {
-	ind[0] = elemind[side-11];
-	ind[1] = elemind[3+side-11];	
-      }
-    }
-    else if (side < 20) {
-      *sideelemtype = 101;
-      ind[0] = elemind[side-14];      
-    }
-    break;
 
   case 605: /* Linear pyramid */
     if(side < 4) {
@@ -551,6 +478,122 @@ void GetElementSide(int element,int side,int normal,
     }
     break;
 
+  case 706: /* Linear wedge element */
+    if(side < 3) {
+      *sideelemtype = 404;
+      ind[0] = elemind[side];
+      ind[1] = elemind[(side+1)%3];
+      ind[2] = elemind[(side+1)%3+3];
+      ind[3] = elemind[side+3];  
+    }
+    else if (side < 5) {
+      *sideelemtype = 303;          
+      for(i=0;i<3;i++)
+	ind[i] = elemind[3*(side-3)+i];
+    }
+    else if(side < 14) {
+      *sideelemtype = 202;
+      if(side < 8) {
+	ind[0] = elemind[side-5];
+	ind[1] = elemind[(side-4)%3];
+      }
+      if(side < 11) {
+	ind[0] = elemind[3+side-8];
+	ind[1] = elemind[3+(side-7)%3];
+      }
+      else {
+	ind[0] = elemind[side-11];
+	ind[1] = elemind[3+side-11];	
+      }
+    }
+    else if (side < 20) {
+      *sideelemtype = 101;
+      ind[0] = elemind[side-14];      
+    }
+    break;
+ 
+  case 715: /* Quadratic wedge element */
+    if(side < 3) {
+      *sideelemtype = 408;
+      ind[0] = elemind[side];
+      ind[1] = elemind[(side+1)%3];
+      ind[2] = elemind[(side+1)%3+3];
+      ind[3] = elemind[side+3];  
+      ind[4] = elemind[6+side];        
+      ind[5] = elemind[12+(side+1)%3];   
+      ind[6] = elemind[9+side];      
+      ind[7] = elemind[12+side];
+    }
+    else if (side < 5) {
+      *sideelemtype = 306;          
+      for(i=0;i<3;i++) {
+	ind[i] = elemind[3*(side-3)+i];
+	ind[i+3] = elemind[3*(side-3)+6+i];
+      }      
+    }
+    else if(side < 14) {
+      *sideelemtype = 202;
+      if(side < 8) {
+	ind[0] = elemind[side-5];
+	ind[1] = elemind[(side-4)%3];
+      }
+      if(side < 11) {
+	ind[0] = elemind[3+side-8];
+	ind[1] = elemind[3+(side-7)%3];
+      }
+      else {
+	ind[0] = elemind[side-11];
+	ind[1] = elemind[3+side-11];	
+      }
+    }
+    else if (side < 20) {
+      *sideelemtype = 101;
+      ind[0] = elemind[side-14];      
+    }
+    break;
+    
+  case 718: /* Quadratic wedge element with centernodes */
+    if(side < 3) {
+      *sideelemtype = 409;
+      ind[0] = elemind[side];
+      ind[1] = elemind[(side+1)%3];
+      ind[2] = elemind[(side+1)%3+3];
+      ind[3] = elemind[side+3];  
+      ind[4] = elemind[6+side];        
+      ind[5] = elemind[12+(side+1)%3];   
+      ind[6] = elemind[9+side];      
+      ind[7] = elemind[12+side];
+
+      ind[8] = elemind[15+side];
+    }
+    else if (side < 5) {
+      *sideelemtype = 306;          
+      for(i=0;i<3;i++) {
+	ind[i] = elemind[3*(side-3)+i];
+	ind[i+3] = elemind[3*(side-3)+6+i];
+      }      
+    }
+    else if(side < 14) {
+      *sideelemtype = 202;
+      if(side < 8) {
+	ind[0] = elemind[side-5];
+	ind[1] = elemind[(side-4)%3];
+      }
+      if(side < 11) {
+	ind[0] = elemind[3+side-8];
+	ind[1] = elemind[3+(side-7)%3];
+      }
+      else {
+	ind[0] = elemind[side-11];
+	ind[1] = elemind[3+side-11];	
+      }
+    }
+    else if (side < 20) {
+      *sideelemtype = 101;
+      ind[0] = elemind[side-14];      
+    }
+    break;
+    
   case 808: /* Linear brick */
     if(side < 6) {
       *sideelemtype = 404;
@@ -1834,7 +1877,7 @@ int CreatePoints(struct CellType *cell,struct FemType *data,
 		 struct BoundaryType *bound,
 		 int param1,int param2,int pointmode,int pointtype,int info)
 {
-  int size,i,no,corner,times,elem,node;
+  int size,i,no,corner,times,elem=0,node;
 
   bound->created = FALSE;
   bound->nosides = 0;    
@@ -2883,7 +2926,7 @@ int UniteMeshes(struct FemType *data1,struct FemType *data2,
 		int nooverlap, int info)
 /* Unites two meshes for one larger mesh */
 {
-  int i,j,k;
+  int i,j,k=0;
   int noelements,noknots,nonodes,maxnodes;
   int **newtopo=NULL,*newmaterial=NULL,*newelementtypes=NULL;
   Real *newx=NULL,*newy=NULL,*newz=NULL;
@@ -6980,6 +7023,7 @@ void ModifyUnsupportedElements(struct FemType *data) {
   for(i=1; i <= data->noelements; i++) {
     elementtype = data->elementtypes[i];
     if(elementtype == 718) {
+      break; /* Introducing support */
       data->elementtypes[i] = 715;
       cnt718++;
     }
@@ -7016,7 +7060,7 @@ void ElementsToBoundaryConditions(struct FemType *data,
 {
   int i,j,k,l,sideelemtype,sideelemtype2,elemind,elemind2,sideelem,sameelem;
   int sideind[MAXNODESD1],sideind2[MAXNODESD1],elemsides,side,hit,same,minelemtype;
-  int sidenodes,sidenodes2,maxelemtype,elemtype,elemdim,sideelements,material;
+  int sidenodes,sidenodes2=0,maxelemtype,elemtype,elemdim,sideelements,material;
   int *moveelement=NULL,*parentorder=NULL,*possible=NULL,**invtopo=NULL;
   int noelements,maxpossible,noknots,maxelemsides,twiceelem,sideelemdim,minelemdim,maxelemdim;
   int debug,unmoved,removed,elemhits,loopdim,lowdimbulk;
@@ -7332,8 +7376,15 @@ void ElementsToBoundaryConditions(struct FemType *data,
 		  sprintf(data->boundaryname[material],"body%d",material);
 	      }
 	    }
-	    if(!strncmp(data->boundaryname[material],"body",4)) {
-	      strncpy(data->boundaryname[material],"bnry",4);
+	    
+	    if(material < MAXBCS ) {
+	      if(!data->boundaryname[material]) data->boundaryname[material] = Cvector(0,MAXNAMESIZE);
+	      if(!strncmp(data->boundaryname[material],"body",4)) {
+		strncpy(data->boundaryname[material],"bnry",4);
+	      }
+	    }
+	    else {
+	      printf("Boundary index %d exceeds the maximum allocated space for names %d\n",material,MAXBCS);
 	    }
 	  }
 
@@ -8096,7 +8147,7 @@ int CreateBoundaryLayer(struct FemType *data,struct BoundaryType *bound,
 /* Create Boundary layers that may be used to solve accurately fluid
    flow problems and similar equations. */
 {
-  int i,j,k,l,m,n,i2,i3,nonodes,maxbc,newbc;
+  int i,j,k,l,m,n,i2,i3,nonodes,maxbc,newbc=0;
   int noknots,noelements,elemindx,nodeindx,elemtype;
   int oldnoknots,oldnoelements,maxelemtype,oldmaxnodes;
   int nonewnodes,nonewelements,dolayer,dim,order,midpoints;

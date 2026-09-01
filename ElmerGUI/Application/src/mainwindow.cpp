@@ -48,6 +48,7 @@
 #include <QStringList>
 #include <QSystemTrayIcon>
 #include <QTimeLine>
+#include <QtGlobal>  /* for QT_VERSION_CHECK with Qt4 or Qt5 */
 #include <QtGui>
 
 #include <fstream>
@@ -2790,8 +2791,8 @@ void MainWindow::saveElmerMesh(QString dirName) {
 //-----------------------------------------------------------------------------
 void MainWindow::closeMainWindowSlot() {
   saveSlot();
-  QApplication::closeAllWindows();
-  // close();
+  close();
+  QApplication::quit();
 }
 
 // File -> Save picture as...
@@ -5106,7 +5107,11 @@ void MainWindow::showVtkPostSlot() {
 
     logMessage("Executing: " + unifyingCommand);
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    meshUnifier->startCommand(unifyingCommand);
+#else
     meshUnifier->start(unifyingCommand);
+#endif
 
     if (!meshUnifier->waitForStarted()) {
       solverLogWindow->getTextEdit()->append(
@@ -6638,7 +6643,11 @@ void MainWindow::runsolverSlot() {
 
       logMessage("Executing: " + partitioningCommand);
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+      meshSplitter->startCommand(partitioningCommand);
+#else
       meshSplitter->start(partitioningCommand);
+#endif
 
       if (!meshSplitter->waitForStarted()) {
         logMessage("Unable to start ElmerGrid for mesh partitioning - aborted");
@@ -6696,7 +6705,7 @@ void MainWindow::meshSplitterFinishedSlot(int exitCode) {
   int nofProcessors = ui.nofProcessorsSpinBox->value();
 
   QString parallelExec = ui.parallelExecLineEdit->text().trimmed();
-#ifdef WIN32
+#if defined (_WIN32)
   parallelExec = "\"" + parallelExec + "\"";
 #endif
 
@@ -6707,7 +6716,11 @@ void MainWindow::meshSplitterFinishedSlot(int exitCode) {
 
   logMessage("Executing: " + parallelCmd);
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  solver->startCommand(parallelCmd);
+#else
   solver->start(parallelCmd);
+#endif
   killsolverAct->setEnabled(true);
 
   if (!solver->waitForStarted()) {
@@ -7075,7 +7088,11 @@ void MainWindow::resultsSlot() {
 
     logMessage("Executing: " + unifyingCommand);
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    meshUnifier->startCommand(unifyingCommand);
+#else
     meshUnifier->start(unifyingCommand);
+#endif
 
     if (!meshUnifier->waitForStarted()) {
       solverLogWindow->getTextEdit()->append(
@@ -7212,19 +7229,14 @@ void MainWindow::compileSolverSlot() {
     return;
   }
 
+#ifdef _WIN32
+  QString compilerWrapper(QString(qgetenv("ELMER_HOME")) + "\\bin\\elmerf90.exe");
   QStringList args;
-#ifdef WIN32
-  args << "/C";
-  args << "" + QString(qgetenv("ELMER_HOME")) + "\\bin\\elmerf90.bat";
-  QString dllFileName;
-  dllFileName = fileName.left(fileName.lastIndexOf(".")) + ".dll";
   args << "-o";
-  args << dllFileName;
-#endif
+  args << fileName.left(fileName.lastIndexOf(".")) + ".dll";
   args << fileName;
 
-#ifdef WIN32
-  compiler->start("cmd.exe", args);
+  compiler->start(compilerWrapper, args);
 #else
   logMessage("Run->compiler is currently not implemented on this platform");
   return;
@@ -7787,7 +7799,13 @@ void MainWindow::updateSysTrayIcon(QString label, QString msg) {
 
 // Finalize system tray icon...
 //-----------------------------------------------------------------------------
-void MainWindow::finalizeSysTrayIcon() {}
+void MainWindow::finalizeSysTrayIcon() {
+  if (sysTrayIcon) {
+    sysTrayIcon->setVisible(false);
+    delete sysTrayIcon;
+    sysTrayIcon = NULL;
+  }
+}
 
 // Get default open/save directory
 //-----------------------------------------------------------------------------
@@ -8216,6 +8234,8 @@ void MainWindow::generateAndSaveAndRunSlot() { saveAndRun(true); }
 void MainWindow::closeEvent(QCloseEvent *event) {
   saveSettings();
   delete objectBrowser;
+  finalizeSysTrayIcon();
+  event->accept();
 }
 
 void MainWindow::showObjectBrowserSlot() {

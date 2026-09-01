@@ -290,7 +290,7 @@ direct numerical integration.
 24 Aug 1995
 
 *******************************************************************************/
-double BiLinearIntegrateDiffToArea( Geometry_t *GB,
+double BiLinearIntegrateDiffToArea( Geometry_t *GB, Cylinder_t *Cyl, 
     double FX,double FY,double FZ, double NFX,double NFY,double NFZ )
 {
     double DX,DY,DZ,NTX,NTY,NTZ,U,V;
@@ -306,13 +306,29 @@ double BiLinearIntegrateDiffToArea( Geometry_t *GB,
 
     int i,j;
 
-    Rs = NFX*NFX + NFY*NFY + NFZ*NFZ;
-    if ( Rs != 0 && ABS(1-Rs)>1.0E-08 )
+    R = NFX*NFX + NFY*NFY + NFZ*NFZ;
+    if ( !Cyl ) {
+      if ( R != 0 ) {
+         R = 1.0/sqrt(R);
+         NFX *= R;
+         NFY *= R;
+         NFZ *= R;
+      }
+    }
+    Rs = R;
+
+    /*
+     * Closed form inner integral for a planar patch.  This is the one off
+     * path (the subdivision estimates); the integration loops below prepare
+     * the target once and call ContourEvaluate directly.
+     */
+    if ( ClosedFormInteg && !Cyl && Rs != 0.0 )
     {
-       Rs = 1.0/sqrt(Rs);
-       NFX *= Rs;
-       NFY *= Rs;
-       NFZ *= Rs;
+        ContourTarget_t CT;
+        double CF;
+
+        if ( ContourPrepare(GB,&CT) &&
+               ContourEvaluate(&CT,FX,FY,FZ,NFX,NFY,NFZ,&CF) ) return CF;
     }
 
     F  = 0.0;
@@ -340,11 +356,15 @@ double BiLinearIntegrateDiffToArea( Geometry_t *GB,
        DZ  = BiLinearValue(U,V,BZ) - FZ;
        R = sqrt(DX*DX + DY*DY + DZ*DZ);
 
+       if ( Cyl ) {
+         CylinderNormal(FX,FY,FZ,DX,DY,DZ,Cyl,&NFX,&NFY,&NFZ );
+       }
+
+
        if ( Rs != 0) {
          cosA = (DX*NFX + DY*NFY + DZ*NFZ) / R;
          if ( cosA < 1.0E-8 ) continue;
        }
-
 
        cosB = (-DX*NTX - DY*NTY - DZ*NTZ) / R;
        if ( cosB < 1.0E-8 ) continue;
@@ -369,7 +389,7 @@ view between the elements is resolved by ray tracing.
 *******************************************************************************/
 void BiLinearComputeViewFactors(Geometry_t *GA,Geometry_t *GB,int LevelA,int LevelB)
 {
-    double R,FX,FY,FZ,DX,DY,DZ,U,V,Hit;
+    double R,FX,FY,FZ,DX,DY,DZ,U,V,W,Hit;
     double F,Fa,Fb,EA,PI=2*acos(0.0);
 
     double *X  = GA->BiLinear->PolyFactors[0];
@@ -403,7 +423,7 @@ void BiLinearComputeViewFactors(Geometry_t *GA,Geometry_t *GB,int LevelA,int Lev
     DY = BiLinearValue( U,V,NY );
     DZ = BiLinearValue( U,V,NZ );
 
-    Fa = Fb = (*IntegrateDiffToArea[GB->GeometryType])( GB,FX,FY,FZ,DX,DY,DZ );
+    Fa = Fb = (*IntegrateDiffToArea[GB->GeometryType])( GB,NULL,FX,FY,FZ,DX,DY,DZ );
 
     if ( GA != GB ) 
     {
@@ -418,7 +438,7 @@ void BiLinearComputeViewFactors(Geometry_t *GA,Geometry_t *GB,int LevelA,int Lev
        DY = FunctionValue( GB,U,V,4 );
        DZ = FunctionValue( GB,U,V,5 );
 
-       Fb = BiLinearIntegrateDiffToArea( GA,FX,FY,FZ,DX,DY,DZ );
+       Fb = BiLinearIntegrateDiffToArea( GA,NULL,FX,FY,FZ,DX,DY,DZ );
     }
 
     if ( Fa < 1.0E-10 && Fb < 1.0E-10 ) return;
@@ -427,34 +447,129 @@ void BiLinearComputeViewFactors(Geometry_t *GA,Geometry_t *GB,int LevelA,int Lev
     {
         GeometryList_t *Link;
 
+        /*
+         * The shaft of this pair: the candidate blockers.  Built once and
+         * used by everything below -- the statistics, the clipping, and the
+         * ray casting, whose rays can only ever meet these same candidates.
+         */
+        int Clipped = FALSE, HaveShaft = FALSE, nc = -1;
+        int Cand[SC_MAXCAND];
+        ContourTarget_t TA,TB;
+        Shaft_t Sh;
+
+        if ( (ShaftRayCull || ShaftStats || ClipShadows) && GA != GB )
+        {
+            if ( ContourPrepare(GA,&TA) && ContourPrepare(GB,&TB) &&
+                    ShaftInit(&Sh,&TA,&TB) )
+            {
+                nc = ShaftCandidates( &Sh,Cand,SC_MAXCAND );
+                HaveShaft = ( nc >= 0 );
+            }
+        }
+
+        if ( ShaftStats ) ShaftCountAdd( HaveShaft ? nc : -3 );
+
+        /*
+         * Visibility by clipping.  Falls through to the ray casting below
+         * whenever it does not apply: a geometry without a polygon boundary,
+         * a shaft with too many candidate blockers, or a fragment count that
+         * runs away.
+         */
+        if ( ClipShadows && HaveShaft )
+        {
+            {
+                /*
+                 * Accept or subdivide on the same terms as the ray path: an
+                 * unobstructed pair outright, a partly blocked one only when
+                 * the factors are small.  The outer integral still has a kink
+                 * across the penumbra edge, so that criterion still earns its
+                 * keep even though the inner one is now exact.
+                 */
+                if ( nc > 0 && !((Fa<FactorEPS/2 || GB->Area < AreaEPS/2) &&
+                                 (Fb<FactorEPS/2 || GA->Area < AreaEPS/2)) )
+                    goto subdivide;
+
+                F = 0.0;
+                Clipped = TRUE;
+
+                for( i=0; i<N_Integ; i++ )
+                {
+                    double XP[3],NF[3],DR,DF;
+
+                    U = U_Integ[i];
+                    V = V_Integ[i];
+
+                    XP[0] = BiLinearValue(U,V,X);
+                    XP[1] = BiLinearValue(U,V,Y);
+                    XP[2] = BiLinearValue(U,V,Z);
+
+                    NF[0] = BiLinearValue(U,V,NX);
+                    NF[1] = BiLinearValue(U,V,NY);
+                    NF[2] = BiLinearValue(U,V,NZ);
+
+                    DR = NF[0]*NF[0] + NF[1]*NF[1] + NF[2]*NF[2];
+                    if ( DR <= 0.0 ) { Clipped = FALSE; break; }
+                    DR = 1.0/sqrt(DR);
+                    NF[0] *= DR; NF[1] *= DR; NF[2] *= DR;
+
+                    if ( !ClipVisible(&TB,Cand,nc,XP,NF,&DF) )
+                       { Clipped = FALSE; break; }
+
+                    F += S_Integ[i]*BiLinearEofA(U,V,X,Y,Z)*DF;
+                }
+
+                if ( Clipped )
+                {
+                    if ( F <= 0.0 ) return;         /* fully shadowed */
+                    F /= PI;
+                    goto store;
+                }
+            }
+        }
+
         Hit = Nrays;
         for( i=0; i<Nrays; i++ )
         {
-            U = drand48(); V = drand48();
-
+            U = vrand();
+	    V = vrand();
             FX = BiLinearValue(U,V,X);
             FY = BiLinearValue(U,V,Y);
             FZ = BiLinearValue(U,V,Z);
 
-            U = drand48(); V = drand48();
+	    W = U;
+	    U=1-V; V=1-W;
             if ( GB->GeometryType == GEOMETRY_TRIANGLE )
-                while( U+V>1 ) { U=drand48(); V=drand48(); }
+                while( U+V>1 ) { U=1-U; V=1-V; }
 
-            DX = FunctionValue( GB,U,V,0 ) - FX;
-            DY = FunctionValue( GB,U,V,1 ) - FY;
-            DZ = FunctionValue( GB,U,V,2 ) - FZ;
+            DX = FunctionValue(GB,U,V,0) - FX;
+            DY = FunctionValue(GB,U,V,1) - FY;
+            DZ = FunctionValue(GB,U,V,2) - FZ;
 
-            Hit -= RayHitGeometry( FX,FY,FZ,DX,DY,DZ );
+            /* the rays of this pair can only meet its own candidates */
+            if ( !ShaftRayCull || !HaveShaft )
+                Hit -= RayHitGeometry( FX,FY,FZ,DX,DY,DZ );
+            else if ( nc > 0 )
+                Hit -= RayHitCandidates( Cand,nc,FX,FY,FZ,DX,DY,DZ );
         }
+
+        /* the cull claimed nothing could block: the rays must agree */
+        if ( ShaftStats && HaveShaft && nc == 0 && Hit < Nrays ) ShaftCountAdd( -2 );
 
         if ( Hit == 0 ) return;
 
         if ( Hit == Nrays || ((Fa<FactorEPS/2 || GB->Area < AreaEPS/2) &&
                  (Fb<FactorEPS/2 || GA->Area < AreaEPS/2) ))
         {
+            /* the target is the same for every source point, so prepare
+               the closed form once here instead of inside the loop */
+            ContourTarget_t CT;
+            int UseCF = ClosedFormInteg && ContourPrepare( GB,&CT );
+
             F = 0.0;
             for( i=0; i<N_Integ; i++ )
             {
+                double DF, DR;
+
                 U = U_Integ[i];
                 V = V_Integ[i];
 
@@ -466,12 +581,25 @@ void BiLinearComputeViewFactors(Geometry_t *GA,Geometry_t *GB,int LevelA,int Lev
                 DY = BiLinearValue(U,V,NY);
                 DZ = BiLinearValue(U,V,NZ);
 
+                if ( UseCF )
+                {
+                    DR = DX*DX + DY*DY + DZ*DZ;
+                    if ( DR > 0.0 )
+                    {
+                        DR = 1.0/sqrt(DR);
+                        ContourEvaluate( &CT,FX,FY,FZ,DX*DR,DY*DR,DZ*DR,&DF );
+                    } else
+                        DF = 0.0;
+                } else
+                    DF = (*IntegrateDiffToArea[GB->GeometryType])( GB,NULL,FX,FY,FZ,DX,DY,DZ );
+
                 EA = BiLinearEofA(U,V,X,Y,Z);
-                F += S_Integ[i]*EA*
-                    (*IntegrateDiffToArea[GB->GeometryType])( GB,FX,FY,FZ,DX,DY,DZ );
+                F += S_Integ[i]*EA*DF;
             }
 
             F = Hit*F / (PI*Nrays);
+
+store:
             Fb = F / GB->Area;
             Fa = F / GA->Area;
 
@@ -575,11 +703,11 @@ view between the elements is resolved by ray tracing.
 
 *******************************************************************************/
 void
-BiLinearComputeRadiatorFactors (Geometry_t * GA, double dx, double dy,
-			      double dz, int LevelA)
+BiLinearComputeRadiatorFactors (Geometry_t * GA, int LineFlag, double dx, double dy,
+    double dz, double nx, double ny, double nz, int LevelA)
 {
   double R, FX, FY, FZ, GX, GY, GZ, U, V, Hit;
-  double F, Fa, Fb, EA, PI = 2 * acos (0.0);
+  double F, Fa, Fb, EA, PI = 2 * acos (0.0), EPS=1e-12;
 
   double *X = GA->BiLinear->PolyFactors[0];
   double *Y = GA->BiLinear->PolyFactors[1];
@@ -589,16 +717,37 @@ BiLinearComputeRadiatorFactors (Geometry_t * GA, double dx, double dy,
   double *aY = GA->BiLinear->PolyFactors[4];
   double *aZ = GA->BiLinear->PolyFactors[5];
 
-  int i, j;
+  Cylinder_t *Cyl = NULL, CylS;
+
+  int i, j, Ident;
 
   if (LevelA & 1)
     {
       Fa = 0;
       Fb = 0;
-        goto subdivide;
+      goto subdivide;
     }
 
-    Fa = Fb = BiLinearIntegrateDiffToArea( GA,dx,dy,dz,0.0,0.0,0.0);
+    R = nx*nx + ny*ny +nz*nz;
+    if (LineFlag &&  R != 0) {
+      R = sqrt(R);
+      Cyl = &CylS;
+      Cyl->Radius = R/25;
+      Cyl->CenterPoint.x = (2*dx+nx)/2;
+      Cyl->CenterPoint.y = (2*dy+ny)/2;
+      Cyl->CenterPoint.z = (2*dz+nz)/2;
+      GetMatrixToRotateVectorToZAxis(nx/R,ny/R,nz/R,Cyl->RotationMatrix,&Ident);
+
+      Fa = 0;
+      for( i=0; i<N_Integ1d; i++ )
+      {
+	 U = U_Integ1d[i];
+         Fa += S_Integ1d[i]*BiLinearIntegrateDiffToArea(GA,Cyl,dx+U*nx,dy+U*ny,dz+U*nz,nx,ny,nz);
+      }
+      Fb = Fa;
+    } else {
+      Fa = Fb = BiLinearIntegrateDiffToArea( GA,Cyl,dx,dy,dz,nx,ny,nz );
+    }
 
     if ( Fa < 1.0e-10 && Fb < 1.0e-10 ) return;
 
@@ -609,8 +758,8 @@ BiLinearComputeRadiatorFactors (Geometry_t * GA, double dx, double dy,
        Hit = Nrays;
        for( i=0; i<Nrays; i++ )
        {
-          U = drand48();
-          V = drand48();
+          U = vrand();
+          V = vrand();
 
           FX = BiLinearValue(U,V,X);
           FY = BiLinearValue(U,V,Y);
@@ -619,6 +768,12 @@ BiLinearComputeRadiatorFactors (Geometry_t * GA, double dx, double dy,
           GX = dx - FX;
           GY = dy - FY;
           GZ = dz - FZ;
+	  if ( Cyl ) {
+            U = 1-V;
+	    GX += U*nx;
+	    GY += U*ny;
+	    GZ += U*nz;
+	  }
 
            if ( RayHitGeometry( FX,FY,FZ,GX,GY,GZ ) ) Hit-=1.0;
         }
@@ -658,7 +813,7 @@ subdivide:
             }
         }
 
-        BiLinearComputeRadiatorFactors( GA->Left,dx,dy,dz,LevelA+1 );
-        BiLinearComputeRadiatorFactors( GA->Right,dx,dy,dz,LevelA+1 );
+        BiLinearComputeRadiatorFactors( GA->Left,LineFlag, dx,dy,dz,nx,ny,nz,LevelA+1 );
+        BiLinearComputeRadiatorFactors( GA->Right,LineFlag, dx,dy,dz,nx,ny,nz,LevelA+1 );
 }
 

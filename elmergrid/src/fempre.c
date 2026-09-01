@@ -83,7 +83,7 @@ int main(int argc, char *argv[])
   printf("ElmerGrid mesh conversion and manipulation utility, Welcome!\n");
 #ifdef ELMER_FEM_VERSION
   /* Branch might not exist even though Revision would exist when git is in detached head state.
-     Heance check the branch for existance. */
+     Hence check the branch for existence. */
 #ifdef ELMER_FEM_BRANCH
   printf("Version: %s-%s (Rev: %s, Compiled: %s)\n",ELMER_FEM_VERSION,ELMER_FEM_BRANCH,
 	 ELMER_FEM_REVISION,ELMER_FEM_COMPILATIONDATE);
@@ -473,7 +473,7 @@ int main(int argc, char *argv[])
 
   /* Make the discontinuous boundary needed, for example, in poor thermal conduction */
   for(k=0;k<nomeshes;k++) {
-    if(!eg.discont) {
+    if(!eg.discont && k<nogrids) {
       for(j=0;j<grids[k].noboundaries;j++)
 	if(grids[k].boundsolid[j] == 2) {
 	  eg.discontbounds[eg.discont] = grids[k].boundtype[j];

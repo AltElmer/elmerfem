@@ -38,11 +38,12 @@
 #include <math.h>
 #include <float.h>
 #include <limits.h>
+#include <stdint.h>
 #include "../../config.h"
 
-#ifdef WIN32
-double drand48();
-#endif
+double vrand();
+void vrand_seed( uint64_t key );
+uint64_t vrand_pair_key( int a, int b, int n );
 
 #include <sys/types.h>
 
@@ -72,13 +73,13 @@ double drand48();
 double Fvalue_4node( double *,double, double );
 double ElementOfArea_4node( double *,double *,double *,double, double );
 
-EXT double U_Integ1d[32],S_Integ1d[32],U_Integ[128],V_Integ[128],S_Integ[128];
+EXT double *U_Integ1d,*S_Integ1d,*U_Integ,*V_Integ,*S_Integ;
 EXT int N_Integ,N_Integ1d,N_Integ3;
 
 EXT double ShapeFunctionMatrix[16][16],ShapeFunctionMatrix4[4][4],
            ShapeFunctionMatrix3[3][3], ShapeFunctionMatrix2[2][2];
 
-EXT double U_Integ3[128],V_Integ3[128],S_Integ3[128];
+EXT double *U_Integ3,*V_Integ3,*S_Integ3;
 
 EXT double XMin,XMax,YMin,YMax,ZMin,ZMax; 
 EXT char str[512];
@@ -269,6 +270,7 @@ void InitVolumeBounds( int,int,Geometry_t * );
 
 void GetMatrixToRotateVectorToZAxis(double x,double y,double z,Matrix_t Matrix,int *Ident);
 void RotateVector(double *x,double *y,double *z,Matrix_t Matrix);
+void CylinderNormal(double,double,double,double,double,double,Cylinder_t *,double *,double *,double *);
 
 EXT Geometry_t *Geometry,*Elements,*RTElements;
 
@@ -290,7 +292,7 @@ void BiCubicBezierToMonomial(double *MonomialFactors,double *BezierFactors);
 double BiCubicEofA(double U,double V,double *X,double *Y,double *Z);
 double BiCubicArea(Geometry_t *);
 double BiCubicLength(Geometry_t *,int);
-double BiCubicIntegrateDiffToArea(Geometry_t *,double,double,double,double,double,double);
+double BiCubicIntegrateDiffToArea(Geometry_t *,Cylinder_t *,double,double,double,double,double,double);
 void BiCubicSubdivide(Geometry_t *,int,int);
 int BiCubicIsAPlane(double *,double *,double *);
 void BiCubicComputeViewFactors(Geometry_t *GA,Geometry_t *GB,int Level,int );
@@ -305,7 +307,7 @@ void BiQuadraticBezierToMonomial(double *MonomialFactors,double *BezierFactors);
 double BiQuadraticEofA(double U,double V,double *X,double *Y,double *Z);
 double BiQuadraticArea(Geometry_t *);
 double BiQuadraticLength(Geometry_t *,int);
-double BiQuadraticIntegrateDiffToArea(Geometry_t *,double,double,double,double,double,double);
+double BiQuadraticIntegrateDiffToArea(Geometry_t *,Cylinder_t *,double,double,double,double,double,double);
 void BiQuadraticSubdivide(Geometry_t *,int,int);
 int BiQuadraticIsAPlane(double *,double *,double *);
 void BiQuadraticComputeViewFactors(Geometry_t *GA,Geometry_t *GB,int Level,int );
@@ -317,7 +319,7 @@ void BiQuadraticComputeViewFactors(Geometry_t *GA,Geometry_t *GB,int Level,int )
 double BiLinearEofA(double U,double V,double *X,double *Y,double *Z);
 double BiLinearArea(Geometry_t *);
 double BiLinearLength(Geometry_t *,int);
-double BiLinearIntegrateDiffToArea(Geometry_t *,double,double,double,double,double,double);
+double BiLinearIntegrateDiffToArea(Geometry_t *,Cylinder_t *,double,double,double,double,double,double);
 void BiLinearSubdivide(Geometry_t *,int,int);
 void BiLinearComputeViewFactors(Geometry_t *GA,Geometry_t *GB,int,int );
 
@@ -328,7 +330,7 @@ void BiLinearComputeViewFactors(Geometry_t *GA,Geometry_t *GB,int,int );
 double TriangleEofA(double U,double V,double *X,double *Y,double *Z);
 double TriangleArea(Geometry_t *);
 double TriangleLength(Geometry_t *,int);
-double TriangleIntegrateDiffToArea(Geometry_t *,double,double,double,double,double,double);
+double TriangleIntegrateDiffToArea(Geometry_t *,Cylinder_t *,double,double,double,double,double,double);
 void TriangleSubdivide(Geometry_t *,int,int);
 void TriangleComputeViewFactors(Geometry_t *GA,Geometry_t *GB,int,int );
 
@@ -338,12 +340,12 @@ void TriangleComputeViewFactors(Geometry_t *GA,Geometry_t *GB,int,int );
 double LinearEofA(double,double, double *,double *, double *);
 double LinearArea(Geometry_t *);
 double LinearLength(Geometry_t *,int);
-double LinearIntegrateDiffToArea(Geometry_t *,double,double,double,double,double,double);
+double LinearIntegrateDiffToArea(Geometry_t *,Cylinder_t *,double,double,double,double,double,double);
 void LinearSubdivide(Geometry_t *,int,int);
 void LinearComputeViewFactors(Geometry_t *GA,Geometry_t *GB,int,int );
-void LinearComputeRadiatorFactors(Geometry_t *GA,double, double, double, int );
-void BiLinearComputeRadiatorFactors(Geometry_t *GA,double, double, double, int );
-void TriangleComputeRadiatorFactors(Geometry_t *GA,double, double, double, int );
+void LinearComputeRadiatorFactors(Geometry_t *GA,int,double, double, double, double, double, double, int );
+void BiLinearComputeRadiatorFactors(Geometry_t *GA,int,double, double, double, double, double, double, int );
+void TriangleComputeRadiatorFactors(Geometry_t *GA,int,double, double, double, double, double, double, int );
 
 void elm_4node_quad_shape_functions(double B[4][4]); 
 
@@ -373,15 +375,102 @@ static double FunctionValue( Geometry_t *Geom,double U,double V,int N )
 
 EXT double (*AreaCompute[MAX_GEOMETRY_TYPES])(Geometry_t *);
 EXT void (*ViewFactorCompute[MAX_GEOMETRY_TYPES])(Geometry_t *,Geometry_t *,int, int);
-EXT void (*RadiatorFactorsCompute[MAX_GEOMETRY_TYPES])(Geometry_t *,double,double,double,int);
+EXT void (*RadiatorFactorsCompute[MAX_GEOMETRY_TYPES])(Geometry_t *,int,double,double,double,double,double,double,int);
 EXT void (*Subdivide[MAX_GEOMETRY_TYPES])(Geometry_t *,int,int);
-EXT double (*IntegrateDiffToArea[MAX_GEOMETRY_TYPES])(Geometry_t *,double,double,double,double,double,double);
+EXT double (*IntegrateDiffToArea[MAX_GEOMETRY_TYPES])(Geometry_t *,Cylinder_t *,double,double,double,double,double,double);
 
 void OutputGeometry( Geometry_t *,int );
 void LinearSolveGaussSeidel( Geometry_t *,int,double *);
 
 EXT double AreaEPS,FactorEPS,RayEPS;
 EXT int hits, Nrays;
+
+/*
+ * Closed form ("contour formula") evaluation of the inner view factor
+ * integral, in place of the Gauss quadrature.  See ContourInteg.c.
+ *
+ * The target patch is prepared once per element pair into a caller owned
+ * ContourTarget_t and then evaluated once per source integration point.
+ * The prepared form lives on the caller's stack: nothing is cached in
+ * Geometry_t (which is copied per thread, so growing it would multiply the
+ * per thread footprint) and nothing is keyed on node addresses (which are
+ * recycled by FreeChilds after every row).
+ */
+typedef struct
+{
+    int    NV;              /* 3 or 4 corners                          */
+    double V[4][3];         /* corner coordinates                      */
+    double N[3];            /* unit normal, the geometric one          */
+} ContourTarget_t;
+
+EXT int ClosedFormInteg;
+
+/* Diagnostics.  One padded slot pair per thread, so counting cannot put a
+ * shared cache line in the middle of the element pair loop. */
+#define CF_STRIDE 8
+EXT long *ClosedFormCount;
+EXT int   ClosedFormNThreads;
+
+int  ContourPrepare( Geometry_t *, ContourTarget_t * );
+int  ContourPoly( double (*)[3], int, double *,
+                    double,double,double, double,double,double, double * );
+int  ContourEvaluate( ContourTarget_t *, double,double,double,
+                        double,double,double, double * );
+void ContourCountInit( void );
+void ContourCountSum( long *, long * );
+
+/*
+ * Shaft culling, see ShaftCull.c.  The shaft of a patch pair is the region
+ * every ray between them has to pass through; anything outside it cannot
+ * block the view.
+ */
+#define SH_MAXPLANE 24
+
+typedef struct
+{
+    BBox_t BBox;            /* combined box of the two patches          */
+    double N[SH_MAXPLANE][3],D[SH_MAXPLANE];   /* supporting hull planes */
+    int    NP;
+    double Tol;
+    ContourTarget_t A,B;    /* the two patches, for the per element tests */
+} Shaft_t;
+
+EXT BBox_t *RTElementBBox;  /* per shadow element boxes, built once    */
+EXT int     RTElementNof;
+
+void ShaftInitBoxes( int, Geometry_t * );
+int  ShaftInit( Shaft_t *, ContourTarget_t *, ContourTarget_t * );
+int  ShaftCandidates( Shaft_t *, int *, int );
+int  RayHitCandidates( int *, int, double,double,double, double,double,double );
+
+/* Diagnostics for the shaft cull: how many pairs need no visibility work at
+ * all, and how many candidate blockers the rest have.  Opt in, it costs a
+ * tree walk per pair on top of the normal ray casting. */
+#define SC_MAXCAND 256
+#define SC_NBUCKET 9
+EXT int   ShaftRayCull;   /* cull the rays of a pair to its candidates */
+EXT int   ShaftStats;
+EXT long *ShaftCount;       /* SC_NBUCKET padded slots per thread      */
+EXT int   ShaftNThreads;
+
+/* Visibility by clipping, see ClipShadow.c.  CL_MAXV bounds one fragment;
+ * a convex piece gains at most one vertex per half space it is clipped by. */
+#define CL_MAXV     24
+#define CL_MAXPIECE 64
+
+typedef struct
+{
+    int    n;
+    double V[CL_MAXV][3];
+} ClipPoly_t;
+
+EXT int ClipShadows;
+
+int ClipVisible( ContourTarget_t *, int *, int, double *, double *, double * );
+
+void ShaftCountInit( void );
+void ShaftCountAdd( int );
+void ShaftCountSum( long * );
 
 typedef struct CRSRows
 {

@@ -47,10 +47,12 @@ MODULE ModelDescription
     USE SParIterGlobals
     USE ParallelUtils, ONLY : ParallelReduction, ParallelIter, ParallelInitMatrix
     USE ElementUtils, ONLY : CreateMatrix, FreeMatrix
-    USE MeshUtils, ONLY : Graph_deallocate, &
-        Loadmesh2, MeshStabParams, PrepareMesh, ReleaseMesh, SetMeshDimension, &
-        SetMeshMaxDOFs, SetMeshPartitionOffSet, SplitMeshEqual, SplitMeshLevelSet, &
+    USE MeshBasics, ONLY : MeshStabParams, ReleaseMesh, SetMeshDimension, &
+        SetMeshMaxDOFs, SetMeshPartitionOffSet, &
         RadiationParallelMeshDistribute, GetDefs
+    USE MeshGraph, ONLY : Graph_Deallocate
+    USE MeshLoad, ONLY : LoadMesh2, PrepareMesh
+    USE MeshSplit, ONLY : SplitMeshEqual, SplitMeshLevelSet
     USE MeshAllocations, ONLY : ReleaseMesh, AllocateMesh
     USE MortarUtils, ONLY : DetectMortarPairs
     USE LoadMod
@@ -75,7 +77,7 @@ CONTAINS
     CHARACTER(LEN=*) :: str
     LOGICAL, OPTIONAL :: Quiet, Abort
 
-    INTEGER(KIND=AddrInt) :: Proc
+    TYPE(C_FUNPTR) :: Proc
     INTEGER   :: i,j,slen,q,a
     CHARACTER :: Libname(MAX_PATH_LEN),Procname(MAX_NAME_LEN)
 !------------------------------------------------------------------------------
@@ -123,7 +125,7 @@ CONTAINS
     Proc = LoadFunction( q,0,Libname,Procname,1 )
 
     ! if no luck, try without fortran name mangling
-    IF(Proc==0) Proc = LoadFunction( q,a,Libname,Procname,0 )
+    IF(.NOT. C_ASSOCIATED(Proc)) Proc = LoadFunction( q,a,Libname,Procname,0 )
   END FUNCTION GetProcAddr
 !------------------------------------------------------------------------------
 
@@ -327,7 +329,7 @@ CONTAINS
 
     INTEGER :: i,j,k,n,Arrayn,TYPE,Sect,N1,N2,BoundaryIndex
 
-    INTEGER(KIND=AddrInt) :: Proc
+    TYPE(C_FUNPTR) :: Proc
 
     CHARACTER(LEN=:), ALLOCATABLE :: section, name, str
 
@@ -1007,7 +1009,7 @@ CONTAINS
           IF ( .NOT.ASSOCIATED( Model % Solvers ) ) THEN
             ALLOCATE( Model % Solvers(Model % NumberOfSolvers) )
             DO i=1,Model % NumberOfSolvers
-              Model % Solvers(i) % PROCEDURE = 0
+              Model % Solvers(i) % PROCEDURE = C_NULL_FUNPTR
               NULLIFY( Model % Solvers(i) % Matrix )
               NULLIFY( Model % Solvers(i) % Variable )
               NULLIFY( Model % Solvers(i) % ActiveElements )
@@ -1022,7 +1024,7 @@ CONTAINS
                 ASolvers(i) = Model % Solvers(i)
               END DO
               DO i=SIZE(Model % Solvers)+1,Model % NumberOfSolvers
-                ASolvers(i) % PROCEDURE = 0
+                ASolvers(i) % PROCEDURE = C_NULL_FUNPTR
                 NULLIFY( ASolvers(i) % Matrix )
                 NULLIFY( ASolvers(i) % Mesh )
                 NULLIFY( ASolvers(i) % Variable )
@@ -1399,7 +1401,7 @@ CONTAINS
           str = 'ELMER_LIB'
           CALL envir( str,str1,k ) 
 
-	  fexist = .FALSE.
+          fexist = .FALSE.
           IF ( k > 0  ) THEN
              str1 = str1(1:k) // '/SOLVER.KEYWORDS'
              INQUIRE(FILE=TRIM(str1), EXIST=fexist)
@@ -1634,13 +1636,21 @@ CONTAINS
 
 !------------------------------------------------------------------------------
     RECURSIVE SUBROUTINE SectionContents( Model,List, CheckAbort,FreeNames, &
-              Section, InFileUnit, ScanOnly, Echo )
+              Section, InFileUnit, ScanOnly, Echo, KeyPrefix0 )
 !------------------------------------------------------------------------------
       TYPE(ValueList_t), POINTER :: List,ll
       INTEGER :: InFileUnit,CheckAbort
       TYPE(Model_t) :: Model
       LOGICAL :: FreeNames,Echo
       CHARACTER(LEN=*)  :: Section
+      !> Keyword block prefix in force at the point of an include, so an
+      !> included file continues inside the enclosing block. Absent at top
+      !> level. Note ReadAndTrim already splices most includes inline through
+      !> its own IncludeUnit stack, so they are read in this same frame and
+      !> inherit the prefix regardless; this argument exists so the explicit
+      !> include branch below behaves identically rather than silently not
+      !> inheriting.
+      CHARACTER(LEN=*), OPTIONAL :: KeyPrefix0
 
       INTEGER, ALLOCATABLE  :: IValues(:)
       REAL(KIND=dp), ALLOCATABLE :: Atx(:,:,:), ATt(:)
@@ -1650,7 +1660,7 @@ CONTAINS
       LOGICAL :: ReturnType, ScanOnly, String_literal,  SizeGiven, SizeUnknown, &
           Cubic, AllInt, Monotone, Stat, Harmonic
 
-      INTEGER(KIND=AddrInt) :: Proc
+      TYPE(C_FUNPTR) :: Proc
 
       INTEGER :: i,j,j0,k,k2,l,n,slen,str_beg, str_end, n1,n2, TYPE, &
           abuflen=0, maxbuflen=0, partag, iostat
@@ -1658,17 +1668,114 @@ CONTAINS
       
       CHARACTER(*), PARAMETER :: Caller = 'SectionContents'
 
+      ! Keyword grouping blocks, see the comment at the head of the read loop.
+      INTEGER, PARAMETER :: MAX_KEY_BLOCKS = 32
+      CHARACTER(LEN=:), ALLOCATABLE :: KeyPrefix, NameRest
+      INTEGER :: BlockLen(MAX_KEY_BLOCKS), BlockDepth, nlen0, ibr
+
       ALLOCATE( ATt(1), ATx(1,1,1), IValues(1) )
       ALLOCATE(CHARACTER(MAX_STRING_LEN)::Name)
       ALLOCATE(CHARACTER(MAX_STRING_LEN)::str)
       ALLOCATE(CHARACTER(MAX_STRING_LEN)::Depname)
-      
+
+      ! An included file inherits the block prefix in force at the include, but
+      ! not the depth: it may open and must close its own blocks, and cannot
+      ! close one opened by the includer. This applies to the explicit include
+      ! branch below; includes spliced by ReadAndTrim are read in this frame and
+      ! so share both prefix and depth, meaning a block may legitimately span
+      ! the include boundary there.
+      KeyPrefix  = ''
+      IF ( PRESENT( KeyPrefix0 ) ) KeyPrefix = KeyPrefix0
+      BlockDepth = 0
 
       Name = ''
       DO WHILE( ReadAndTrim( InFileUnit,Name,Echo ) )
 
         IF ( Name == '' .OR. Name == ' ')  CYCLE
+
+        !-------------------------------------------------------------------
+        ! Keyword grouping blocks:
+        !
+        !   Linear System [
+        !     Solver = Iterative
+        !     Convergence Tolerance = 1.0e-9
+        !     Preconditioning [
+        !       Method = ILU1
+        !     ]
+        !   ]
+        !
+        ! '[' opens a block and ']' closes it, and blocks nest. This is purely
+        ! lexical: the block name is prepended to each keyword inside, so the
+        ! rest of the parser, CheckKeyword, SOLVER.KEYWORDS, the ValueList and
+        ! every solver still see exactly the flat keyword they see today
+        ! ("linear system convergence tolerance", "linear system
+        ! preconditioning method"). Nothing downstream changes and existing
+        ! sif files are unaffected.
+        !
+        ! Statements may be separated by ';' as well as by newlines, which
+        ! ReadAndTrim has always supported, so blocks can be written inline:
+        !
+        !   Linear System [ Solver = Direct; Max Iterations = 500; ]
+        !
+        ! The opener is free-form -- keywords may follow '[' on the same line.
+        ! The closer is not: ']' must start a statement, so it needs a newline
+        ! or a ';' before it. "Method = UMFPack ]" swallows the bracket into
+        ! the value and fails loudly. Making ']' terminate a value would mean
+        ! adding it to ReadAndTrim's delimiters, which every name and value in
+        ! every section passes through, and brackets legitimately end values
+        ! there ("Exported Variable 5 = Flow Solution Loads[Fx:1 ... ]"). Not
+        ! worth it to save one character.
+        !
+        ! Brackets are safe as the delimiter. ReadAndTrim has already
+        ! evaluated and consumed any $ MATC block before we get here, so a
+        ! '[' surfacing as a keyword name cannot have come from MATC -- which
+        ! is what rules out braces, whose MATC bodies ("else {", "if (y>0) {")
+        ! are indistinguishable from block openers. Brackets do occur in sif
+        ! files, but only inside values after '=', which never reach here.
+        !-------------------------------------------------------------------
+        nlen0 = LEN_TRIM(Name)
+
+        IF ( nlen0 == 1 .AND. Name(1:1) == ']' ) THEN
+          IF ( BlockDepth <= 0 ) CALL Fatal( Caller, &
+              'Unmatched "]" in section: '//TRIM(Section) )
+          KeyPrefix  = KeyPrefix(1:BlockLen(BlockDepth))
+          BlockDepth = BlockDepth - 1
+          CYCLE
+        END IF
+
+        ! Block opener. The '[' need not be the last thing on the line:
+        ! ReadAndTrim ends a keyword name at '=', so
+        !   Linear System [ Solver = Direct
+        ! arrives here as the single name "linear system [ solver", bracket
+        ! embedded. Split on it rather than only testing the last character,
+        ! looping so several blocks may open on one line. Whatever follows the
+        ! last bracket, if anything, is a keyword name and falls through below
+        ! to be handled as usual.
+        ibr = INDEX( Name(1:nlen0), '[' )
+        IF ( ibr > 0 ) THEN
+          DO WHILE( ibr > 0 )
+            IF ( ibr == 1 ) CALL Fatal( Caller, &
+                'Keyword block "[" without a name in section: '//TRIM(Section) )
+            IF ( BlockDepth >= MAX_KEY_BLOCKS ) CALL Fatal( Caller, &
+                'Keyword blocks nested deeper than '//I2S(MAX_KEY_BLOCKS)// &
+                ' in section: '//TRIM(Section) )
+            BlockDepth = BlockDepth + 1
+            BlockLen(BlockDepth) = LEN(KeyPrefix)
+            KeyPrefix = KeyPrefix//TRIM(Name(1:ibr-1))//' '
+            NameRest  = ADJUSTL(Name(ibr+1:))
+            Name      = NameRest
+            nlen0     = LEN_TRIM(Name)
+            IF ( nlen0 == 0 ) EXIT
+            ibr = INDEX( Name(1:nlen0), '[' )
+          END DO
+          ! Pure opener line: nothing left to assign.
+          IF ( nlen0 == 0 ) CYCLE
+        END IF
+
         IF ( SEQL(Name,'end') ) THEN
+          IF ( BlockDepth > 0 ) CALL Fatal( Caller, &
+              'Unclosed keyword block "'//TRIM(KeyPrefix)//'" at end of section: ' &
+              //TRIM(Section) )
           EXIT
         END IF
 
@@ -1679,10 +1786,17 @@ CONTAINS
           END IF
             
           CALL SectionContents( Model,List,CheckAbort,FreeNames, &
-                  Section,InFileUnit-1,ScanOnly, Echo )
+                  Section,InFileUnit-1,ScanOnly, Echo, KeyPrefix )
           CLOSE( InFileUnit-1 )
           CYCLE
         END IF
+
+        ! Inside a keyword block the name carries the accumulated prefix. Done
+        ! after the include branch above so an include path is never mangled --
+        ! the prefix reaches the included file through the argument instead.
+        ! Tested on the prefix rather than the depth, since an included file
+        ! inherits a non-empty prefix while starting at depth zero.
+        IF ( LEN(KeyPrefix) > 0 ) Name = KeyPrefix//TRIM(Name)
 
         TYPE = LIST_TYPE_CONSTANT_SCALAR
         N1   = 1
@@ -1724,7 +1838,7 @@ CONTAINS
           CASE('real')
             CALL CheckKeyWord( Name,'real',CheckAbort,FreeNames,Section )
 
-             Proc = 0
+             Proc = C_NULL_FUNPTR
              IF ( SEQL(str(str_beg:),'procedure ') ) THEN
 
                IF ( .NOT. ScanOnly ) THEN
@@ -2064,7 +2178,7 @@ CONTAINS
 
             CALL CheckKeyWord( Name,'integer',CheckAbort,FreeNames,Section )
 
-             Proc = 0
+             Proc = C_NULL_FUNPTR
              IF ( SEQL(str(str_beg:),'procedure ') ) THEN
                IF ( .NOT. ScanOnly ) THEN
                  Proc = GetProcAddr( str(str_beg+10:) )
@@ -2328,6 +2442,15 @@ CONTAINS
 !------------------------------------------------------------------------------
       END DO
 !------------------------------------------------------------------------------
+
+      ! An unclosed keyword block has to be caught here rather than at the
+      ! 'end' branch above. When a keyword's value fails to parse, the inner
+      ! value loop keeps reading and can swallow the section's End, so the
+      ! loop above may terminate on end-of-file without ever seeing it. This
+      ! catches both routes.
+      IF ( BlockDepth > 0 ) CALL Fatal( Caller, &
+          'Unclosed keyword block "'//TRIM(KeyPrefix)//'" in section: '//TRIM(Section) )
+
       END SUBROUTINE SectionContents
 !------------------------------------------------------------------------------
 
@@ -2358,7 +2481,7 @@ CONTAINS
 !------------------------------------------------------------------------------
   SUBROUTINE LoadGebhartFactors( Mesh,FileName )
 !------------------------------------------------------------------------------
-    TYPE(Mesh_t), POINTER :: Mesh
+    TYPE(Mesh_t) :: Mesh
     CHARACTER(LEN=*) FileName
 !------------------------------------------------------------------------------
 
@@ -2451,7 +2574,7 @@ CONTAINS
 !------------------------------------------------------------------------------
   SUBROUTINE SetCoordinateSystem( Model )
 !------------------------------------------------------------------------------
-     TYPE(Model_t), POINTER :: Model
+     TYPE(Model_t) :: Model
 !------------------------------------------------------------------------------
      LOGICAL :: Found
      TYPE(Mesh_t), POINTER :: Mesh
@@ -2539,12 +2662,13 @@ CONTAINS
     INTEGER :: i,j,k,s,nlen,eqn,MeshKeep,MeshLevels,nprocs,ModuloMesh,iostat,iLevel
     LOGICAL :: GotIt,GotMesh,found,OneMeshName, OpenFile, Transient
     LOGICAL :: stat, single, MeshGrading, Split
+    LOGICAL :: DG
     TYPE(Solver_t), POINTER :: Solver
-    INTEGER(KIND=AddrInt) :: InitProc
+    TYPE(C_FUNPTR) :: InitProc
     INTEGER, TARGET :: Def_Dofs(10,6)
     REAL(KIND=dp) :: MeshPower
     REAL(KIND=dp), POINTER :: h(:)
-    CHARACTER(LEN=MAX_PATH_LEN) :: MeshDir,MeshName
+    CHARACTER(LEN=MAX_NAME_LEN) :: MeshDir,MeshName,MeshName2
     CHARACTER(:), ALLOCATABLE :: Name, ElementDef, str
     LOGICAL :: Parallel
     TYPE(valuelist_t), POINTER :: lst
@@ -2553,6 +2677,8 @@ CONTAINS
     CHARACTER(LEN=MAX_NAME_LEN) :: MeshNames(MAX_MESHES), ElementDef0
     INTEGER :: MeshCount, MeshI
     LOGICAL, ALLOCATABLE :: MeshSolvers(:,:)
+    CHARACTER(*), PARAMETER :: Caller = 'LoadModel'
+    
 !------------------------------------------------------------------------------
 
     ALLOCATE( Model )
@@ -2596,7 +2722,7 @@ CONTAINS
       !$OMP CRITICAL
       LuaState = lua_init()
       IF(.NOT. LuaState % Initialized) THEN
-        CALL Fatal('LoadModel', 'Failed to initialize Lua subsystem.')
+        CALL Fatal(Caller, 'Failed to initialize Lua subsystem.')
       END IF
 
       ! Store mpi task and omp thread ids in a table
@@ -2636,7 +2762,7 @@ CONTAINS
     INQUIRE( Unit=InFileUnit, OPENED=OpenFile )
     IF ( .NOT. OpenFile ) THEN
       OPEN( Unit=InFileUnit, File=Modelname, STATUS='OLD',IOSTAT=iostat)
-      IF(iostat /= 0) CALL Fatal('LoadModel','Failed to open Model file: '//TRIM(Modelname))
+      IF(iostat /= 0) CALL Fatal(Caller,'Failed to open Model file: '//TRIM(Modelname))
     END IF
     CALL LoadInputFile( Model,InFileUnit,ModelName,MeshDir,MeshName, .TRUE., .TRUE. )
     REWIND( InFileUnit )
@@ -2676,7 +2802,7 @@ CONTAINS
       Name = ListGetString( Solver % Values, 'Procedure', Found )
       IF ( Found ) THEN
         InitProc = GetProcAddr( TRIM(Name)//'_Init0', abort=.FALSE. )
-        IF ( InitProc /= 0 ) THEN
+        IF ( C_ASSOCIATED(InitProc) ) THEN
           CALL ExecSolver( InitProc, Model, Solver, &
                   Solver % dt, Transient )
         END IF
@@ -2710,6 +2836,10 @@ CONTAINS
         ELSE
           MeshSolvers(j, i) = .TRUE.
         END IF
+        !This seems to be necessary to force DefDofs for the global mesh to not
+        !update if you have multiple solvers all pointing at the same solver-
+        !specific mesh
+        GotMesh = .TRUE.
 
       END IF
 
@@ -2755,14 +2885,15 @@ CONTAINS
 
       ! Define what kind of element we are working with in this solver
       !-----------------------------------------------------------------
+      DG = ListGetLogical( Solver % Values, 'Discontinuous Galerkin', stat )
+      Solver % DG = DG
       ElementDef = ListGetString( Solver % Values, 'Element', stat )
    
       IF ( .NOT. stat ) THEN
-        IF ( ListGetLogical( Solver % Values, 'Discontinuous Galerkin', stat ) ) THEN
+        IF ( DG ) THEN
            Solver % Def_Dofs(:,:,4) = 0  ! The final value is set when calling LoadMesh2 
            IF ( .NOT. GotMesh ) Def_Dofs(:,4) = MAX(Def_Dofs(:,4),0 )
            i=i+1
-           Solver % DG = .TRUE.
            CYCLE
         ELSE
            ElementDef = "n:1"
@@ -2795,11 +2926,6 @@ CONTAINS
           EXIT
         END IF
       END DO
-     
-      !Solver % GlobalBubbles = ListGetLogical(Solver % Values, &
-      !    'Bubbles in Global System', stat)
-      !IF(.NOT. stat) Solver % GlobalBubbles = .TRUE.
-      
       i = i + 1
     END DO
 
@@ -2853,7 +2979,7 @@ CONTAINS
       Single = ListGetLogical( Model % Simulation,'Partition Mesh', GotIt ) 
       IF ( Single ) THEN
         IF( ParEnv % PEs == 1 ) THEN
-          CALL Warn('LoadModel','Why perform partitioning in serial case?')
+          CALL Warn(Caller,'Why perform partitioning in serial case?')
         END IF
         IF( ParEnv % MyPe == 0 ) THEN
           SerialMesh => LoadMesh2( Model,MeshDir,MeshName,BoundariesOnly,&
@@ -2866,7 +2992,7 @@ CONTAINS
         IF( ParEnv % PEs > 1) THEN
           Model % Meshes => ReDistributeMesh( Model, SerialMesh, .FALSE., .TRUE. )
         ELSE
-          CALL Info('LoadModel','Only one active partition, using the serial mesh as it is!')
+          CALL Info(Caller,'Only one active partition, using the serial mesh as it is!')
           
           !IF( MAXVAL( SerialMesh % RePartition ) <= 1 ) THEN
           !  DEALLOCATE( SerialMesh % RePartition ) 
@@ -2887,7 +3013,7 @@ CONTAINS
         
         IF( Single ) THEN
           IF( ParEnv % PEs > 1 ) THEN
-            CALL Info('LoadModel','Whole primary mesh will be read for each partition!',Level=7)
+            CALL Info(Caller,'Whole primary mesh will be read for each partition!',Level=7)
           END IF
           Model % Meshes => LoadMesh2( Model, MeshDir, MeshName, &
               BoundariesOnly, 1, mype, Def_Dofs )
@@ -2918,21 +3044,21 @@ CONTAINS
       IF ( .NOT. GotIt ) MeshLevels=1
 
       IF( MeshLevels > 1 ) THEN
-        CALL Info('LoadModel','Creating hierarchy of meshes by mesh multiplication: '&
+        CALL Info(Caller,'Creating hierarchy of meshes by mesh multiplication: '&
             //I2S(MeshLevels))
       END IF
       MeshKeep = ListGetInteger( Model % Simulation, 'Mesh keep',  GotIt )
       IF ( .NOT. GotIt ) MeshKeep = MeshLevels
 
       IF( MeshLevels > 1 ) THEN
-        CALL Info('LoadModel','Keeping number of meshes: '//I2S(MeshKeep),Level=8)
+        CALL Info(Caller,'Keeping number of meshes: '//I2S(MeshKeep),Level=8)
       END IF
       
       MeshPower   = ListGetConstReal( Model % Simulation, 'Mesh Grading Power',GotIt)
       MeshGrading = ListGetLogical( Model % Simulation, 'Mesh Keep Grading', GotIt)
 
       DO iLevel=2,MeshLevels
-        CALL Info('LoadModel','Performing splitting at level: '//I2S(iLevel))
+        CALL Info(Caller,'Performing splitting at level: '//I2S(iLevel))
 
         OldMesh => Model % Meshes
 
@@ -3051,7 +3177,7 @@ CONTAINS
 
       IF( GotIt ) THEN
         WRITE(Message,'(A,I0)') 'Loading solver specific mesh > '//TRIM(Name)// ' < for solver ',s
-        CALL Info('LoadModel',Message,Level=7)
+        CALL Info(Caller,Message,Level=7)
 
         single = .FALSE.     
         IF ( SEQL(Name, '-single ') ) THEN
@@ -3059,7 +3185,7 @@ CONTAINS
           str = Name(9:)
           Name = str
           IF( ParEnv % PEs > 1 ) THEN
-            CALL Info('LoadModel','Whole mesh will be read for each partition!',Level=7)
+            CALL Info(Caller,'Whole mesh will be read for each partition!',Level=7)
           END IF
         END IF
 
@@ -3067,7 +3193,7 @@ CONTAINS
         IF ( SEQL(Name, '-part ') ) THEN
           READ( Name(7:), * ) nprocs
           IF( ParEnv % PEs > 1 ) THEN
-            CALL Info('LoadModel','This mesh is only active at partitions: '&
+            CALL Info(Caller,'This mesh is only active at partitions: '&
                 //I2S(nprocs),Level=7)
           END IF 
           i = 7
@@ -3127,25 +3253,33 @@ CONTAINS
             i = i - 1
           END DO
         END IF
+        !Due to how Elmer formats mesh names, this is needed to ensure that the
+        !check below for identical mesh names actually functions
+        IF (MeshName(1:2) == './') THEN
+          MeshName2 = MeshName(3:LEN_TRIM(MeshName))
+        ELSE
+          MeshName2 = MeshName
+        END IF
 
         ! If we have requested a unique copy of the mesh then do not check
         ! whether the mesh is already loaded as the primary mesh, or as some
         ! other solver-specific mesh. 
         IF(ListGetLogical( Solver % Values,'Mesh Enforce Local Copy',Found ) ) THEN
-          CALL Info('LoadModel','Skipping tests whether the mesh with same name exists!',Level=7)
+          CALL Info(Caller,'Skipping tests whether the mesh with same name exists!',Level=7)
         ELSE
           Found = .FALSE.
           Mesh => Model % Meshes
           DO WHILE( ASSOCIATED( Mesh ) )
             Found = .TRUE.
             k = 1
-            j = i+1
-            DO WHILE( MeshName(j:j) /= CHAR(0) )
+            !j = i+1 I think this is broken, because of how Mesh % Name is saved
+            j = 1
+            DO WHILE( MeshName2(j:j) /= CHAR(0) )
               IF ( k>LEN(Mesh % Name) ) THEN
                 Found = .FALSE.
                 EXIT
               END IF
-              IF (Mesh % Name(k:k) /= MeshName(j:j) ) THEN
+              IF ( Mesh % Name(k:k) /= MeshName2(j:j) ) THEN
                 Found = .FALSE.
                 EXIT
               END IF
@@ -3158,7 +3292,7 @@ CONTAINS
           END DO
 
           IF ( Found ) THEN
-            CALL Info('LoadModel','Mesh with the same name has already been loaded, cycling.',Level=7) 
+            CALL Info(Caller,'Mesh with the same name has already been loaded, cycling.',Level=7) 
             Solver % Mesh => Mesh
             CYCLE
           END IF
@@ -3327,7 +3461,7 @@ CONTAINS
         str = ListGetString( Params, 'Equation', Found )
         IF (.NOT. Found) CYCLE
         IF ( TRIM(str) == 'heat equation' ) THEN
-          CALL Info('LoadModel','Defined radition solver by Equation name "heat equation"',Level=10) 
+          CALL Info(Caller,'Defined radition solver by Equation name "heat equation"',Level=10) 
           CALL ListAddLogical( Params,'Radiation Solver',.TRUE.)
           RETURN
         ENDIF
@@ -3339,7 +3473,7 @@ CONTAINS
         IF(.NOT. Found) CYCLE
         j = INDEX( str,'HeatSolver')
         IF( j > 0 ) THEN
-          CALL Info('LoadModel','Defined radiation solver by Procedure containing "HeatSolver"',Level=10) 
+          CALL Info(Caller,'Defined radiation solver by Procedure containing "HeatSolver"',Level=10) 
           CALL ListAddLogical( Params,'Radiation Solver',.TRUE.)
           RETURN
         END IF
@@ -3627,7 +3761,7 @@ CONTAINS
   FUNCTION SaveResult( Filename,Mesh,Time,SimulationTime,Binary,SaveAll,&
                        FreeSurface, vList ) RESULT(SaveCount)
 !------------------------------------------------------------------------------
-    TYPE(Mesh_t), POINTER :: Mesh
+    TYPE(Mesh_t) :: Mesh
     INTEGER :: Time,SaveCount
     CHARACTER(LEN=*) :: Filename
     REAL(KIND=dp) :: SimulationTime
@@ -3637,10 +3771,10 @@ CONTAINS
 !------------------------------------------------------------------------------
 
     TYPE(Element_t), POINTER :: CurrentElement
-    INTEGER :: i,j,k,k2,DOFs, dates(8), n, PermSize,IsVector,SavesDone,FileCycle,FileInd
+    INTEGER :: i,j,k,k2,DOFs, dates(8), n, PermSize,IsVector,SavesDone,FileCycle,FileInd,CalveInd=0
     TYPE(Variable_t), POINTER :: Var
     LOGICAL :: SaveCoordinates, MoveBoundary, GotIt, SaveThis, &
-        SaveGlobal, OutputVariableList, SaveIp, ThisIp, InitFile 
+        SaveGlobal, OutputVariableList, SaveIp, ThisIp, InitFile, SepFiles
     INTEGER, POINTER :: PrevPerm(:) 
     INTEGER(IntOff_k) :: PrevPermPos, Pos
     INTEGER(IntOff_k), SAVE :: VarPos(MAX_OUTPUT_VARS) = 0
@@ -3650,7 +3784,7 @@ CONTAINS
     CHARACTER(:), ALLOCATABLE :: FName, PosName, DateStr, EqName, VarName
     CHARACTER(*), PARAMETER :: Caller = 'SaveResult'
    
-    SAVE SaveCoordinates
+    SAVE SaveCoordinates,CalveInd
     
 !------------------------------------------------------------------------------
 !   If first time here, count number of variables
@@ -3667,11 +3801,17 @@ CONTAINS
     ! If we have cyclic files then each file includes all data but we cyclicly write the
     ! data on top of previous files. 
     FileCycle = ListGetInteger( ResList,'Output File Cycle', Found )
+    SepFiles = .FALSE.
+    SepFiles = ListGetLogical( ResList, 'Separate Results Files', Found)
     
     ! cyclic files are always independent and hence must always be initiated.
     IF( FileCycle > 0 ) THEN
       InitFile = .TRUE.
-      FileInd = MODULO( Mesh % SavesDone, FileCycle ) + 1 
+      FileInd = MODULO( Mesh % SavesDone, FileCycle ) + 1
+    ELSE IF( SepFiles ) THEN
+      InitFile = .TRUE.
+      FileInd = CalveInd
+      CalveInd = CalveInd + 1
     ELSE
       InitFile = ( Mesh % SavesDone == 0 )
     END IF
@@ -3691,7 +3831,7 @@ CONTAINS
     END IF
 #endif
     
-    IF( FileCycle > 0 ) THEN
+    IF(( FileCycle > 0 ) .OR. (SepFiles)) THEN
       Fname = TRIM(Fname)//'_'//I2S(FileInd)//'nc'
     END IF
 
@@ -3779,7 +3919,7 @@ CONTAINS
               VarName = ListGetString( ResList,'Output Variable '//I2S(j), Found )
               IF( .NOT. Found ) EXIT
               k2 = LEN_TRIM(VarName)
-	      IF (len(Var % Name) < k2) CYCLE
+              IF (LEN(Var % Name) < k2) CYCLE
               IF( VarName(1:k2) == Var % Name(1:k2) ) THEN
                 SaveThis = .TRUE.
                 ! This makes it possible to request saving of vectors
@@ -4129,7 +4269,7 @@ CONTAINS
   SUBROUTINE LoadRestartFile( RestartFile,TimeCount,Mesh,Continuous,EOF,SolverId)
     CHARACTER(LEN=*) :: RestartFile
     INTEGER :: TimeCount
-    TYPE(Mesh_T), POINTER :: Mesh
+    TYPE(Mesh_T), TARGET :: Mesh
     LOGICAL, OPTIONAL :: Continuous,EOF
     INTEGER, OPTIONAL :: SolverId
 !------------------------------------------------------------------------------
@@ -4137,7 +4277,7 @@ CONTAINS
     CHARACTER(:), ALLOCATABLE :: Name,VarName,VarName2,NewName,FullName,PosName
     CHARACTER(LEN=:), ALLOCATABLE :: Row, RestartFileL, FName
     CHARACTER(LEN=MAX_STRING_LEN) :: Trash
-    INTEGER ::i,j,k,k2,n,nt,Node,DOFs,SavedCount,Timestep,NSDOFs,nlen
+    INTEGER ::i,j,k,k2,n,nt,Node,DOFs,SavedCount,Timestep,NSDOFs,nlen, ResultIndex
     INTEGER :: nNodes, Stat, FieldSize, PermSize, FieldSize2, PermSize2
     INTEGER, SAVE :: FmtVersion, DofCount, TotalDofs
     INTEGER, ALLOCATABLE :: Perm(:)
@@ -4145,7 +4285,8 @@ CONTAINS
     TYPE(Solver_t),   POINTER :: Solver
     TYPE(Variable_t), POINTER :: TimeVar, tStepVar
 
-    LOGICAL :: RestartFileOpen = .FALSE., Cont, Found, LoadThis, ThisIp, UsePerm
+    LOGICAL :: RestartFileOpen = .FALSE., Cont, Found, LoadThis, ThisIp,&
+               UsePerm, HasValues, NewPerm
     LOGICAL, SAVE :: PosFile = .FALSE.
     LOGICAL, SAVE :: Binary, GotPerm, GotIt, CreateVariables
     INTEGER, SAVE, ALLOCATABLE :: FileVariableInfo(:,:)
@@ -4204,7 +4345,10 @@ CONTAINS
         CLOSE( RestartUnit)
         CALL Info(Caller,'Using latest saved data for restart: '//I2S(j),Level=6)
       END IF
-      RestartFileL = RestartFileL//'_'//I2S(j)//'nc'
+      ResultIndex = INDEX(RestartFileL,'.')
+      ResultIndex = ResultIndex + 6
+      RestartFileL = RestartFileL(1:ResultIndex)//'_'//I2S(j)//'nc'//RestartFileL(ResultIndex+1:)
+      !RestartFileL = RestartFileL//'_'//I2S(j)//'nc'
     END IF
 
     CALL Info( Caller,'Reading data from file: '//TRIM(RestartFileL), Level = 4 )
@@ -4713,6 +4857,10 @@ CONTAINS
       WRITE( Message,'(A,I0)') 'Reading variables on timestep: ',Timestep
       CALL Info( Caller,Message, Level=4)
 
+      ! Only 'Perm: use previous' leaves this to the previous variable, and it
+      ! cannot be the first one, but give it a value before the loop anyway.
+      HasValues = .TRUE.
+
       DO i=1,TotalDOFs
 
         ! Use the information from header for the sizes
@@ -4744,12 +4892,12 @@ CONTAINS
         ! Note that Var % Perm is the permutation associated with the current field
         ! while Perm will be the permutation associated with the saved field. 
         ! They could be different, even though the usually are not!
-        CALL Info(Caller,'Reading permutation order for: '//TRIM(Row),Level=12)
-        CALL ReadPerm( RestartUnit, Perm, GotPerm )           
+        CALL Info(Caller,'Reading permutation order for: '//TRIM(Row),Level=20)
+        CALL ReadPerm( RestartUnit, Perm, GotPerm, HasValues )
         IF( GotPerm ) THEN
-          CALL Info(Caller,'Succesfully read permutation order for: '//TRIM(Row),Level=20)
+          CALL Info(Caller,'Maximum value for permutation order for "'//TRIM(Row)//'" is '//I2S(MAXVAL(Perm)),Level=12)
         END IF
-          
+                  
         IF( LoadThis ) THEN
           ! Size of read loop for field variable
           IF( GotPerm ) THEN
@@ -4760,7 +4908,7 @@ CONTAINS
           ELSE
             n = FieldSize
           END IF
-          CALL Info(Caller,'Size of load loop is '//I2S(n),Level=15)
+          CALL Info(Caller,'Size of load loop is '//I2S(n),Level=20)
 
           ! If we are renaming the variable also then do it
           j = FileVariableInfo(i,4) 
@@ -4798,7 +4946,9 @@ CONTAINS
             END IF
           END IF
 
-
+          NewPerm = .FALSE.
+          IF(UsePerm) NewPerm = ALL(Var % Perm == 0)
+          
           DO j=1, n
             CALL GetValue( RestartUnit, Perm, UsePerm, j, k, Val )
 
@@ -4809,11 +4959,11 @@ CONTAINS
                                     
             IF ( .NOT. UsePerm ) THEN
               Var % Values(k) = Val
-            ELSE IF ( Var % Perm(j) > 0 ) THEN
-              Var % Values(Var % Perm(j)) = Val
-            ELSE 
+            ELSE IF(NewPerm) THEN
               Var % Perm(j) = k
               Var % Values(k) = Val
+            ELSE IF ( Var % Perm(j) > 0 ) THEN
+              Var % Values(Var % Perm(j)) = Val
             END IF
           END DO
 
@@ -4825,6 +4975,7 @@ CONTAINS
           CALL InvalidateVariable( CurrentModel % Meshes, Mesh, NewName )
         ELSE
           ! Just cycle the values, do not even try to be smart
+          IF (.NOT. HasValues) FieldSize = 0
           DO j=1, FieldSize
             CALL CycleValue( RestartUnit )
           END DO
@@ -4990,7 +5141,11 @@ CONTAINS
       REAL(dp), INTENT(OUT) :: Val
 
       IF ( UsePerm ) THEN
-        iPerm = Perm(iNode)
+        IF(iNode > SIZE(Perm)) THEN
+          iPerm = 0
+        ELSE
+          iPerm = Perm(iNode)
+        END IF
       ELSE
         iPerm = iNode
       END IF
@@ -5023,10 +5178,10 @@ CONTAINS
    END SUBROUTINE CycleValue
    
 
-   SUBROUTINE ReadPerm( RestartUnit, Perm, GotPerm )
+   SUBROUTINE ReadPerm( RestartUnit, Perm, GotPerm, HasValues )
       INTEGER, INTENT(IN) :: RestartUnit
       INTEGER, ALLOCATABLE :: Perm(:)
-      LOGICAL :: GotPerm
+      LOGICAL :: GotPerm, HasValues
       INTEGER :: nPerm, nPositive, i, j, k
       INTEGER(Int8_k) :: Pos
       CHARACTER(MAX_NAME_LEN) :: Row
@@ -5061,20 +5216,27 @@ CONTAINS
          RETURN
       ELSE IF ( nPerm == 0 ) THEN
 !         IF ( ASSOCIATED(Perm) ) DEALLOCATE( Perm )
+         ! A variable without a permutation has a value for every node.
+         HasValues = .TRUE.
          RETURN
       ELSE 
          IF ( Binary ) CALL BinReadInt4( RestartUnit, nPositive )
+         ! Both formats have the count by now. The 'use previous' branch above
+         ! is the one that cannot set this: the file does not repeat the count
+         ! either, and since the permutation is the same as the previous one so
+         ! is the number of positive entries, hence the incoming value is kept.
+         HasValues = ( nPositive /= 0 )
       END IF
 
       IF( ALLOCATED( Perm ) ) THEN
+        IF( SIZE( Perm ) > nPerm ) THEN
+          CALL Info(Caller,'Permutation vector too large: '&
+              //I2S(SIZE(Perm))//' vs. '//I2S(nPerm),Level=15)
+        END IF
         IF( SIZE( Perm ) < nPerm ) THEN
           CALL Warn(Caller,'Permutation vector too small: '&
               //I2S(SIZE(Perm))//' vs. '//I2S(nPerm))
           DEALLOCATE( Perm ) 
-        END IF
-        IF( SIZE( Perm ) > nPerm ) THEN
-          CALL Info(Caller,'Permutation vector too large: '&
-              //I2S(SIZE(Perm))//' vs. '//I2S(nPerm),Level=15)
         END IF
       END IF
       IF( .NOT. ALLOCATED( Perm ) ) THEN
@@ -5149,7 +5311,7 @@ CONTAINS
    RECURSIVE SUBROUTINE InvalidateVariable( TopMesh,PrimaryMesh,Name )
      !------------------------------------------------------------------------------
      CHARACTER(LEN=*) :: Name
-     TYPE(Mesh_t),  POINTER :: TopMesh,PrimaryMesh
+     TYPE(Mesh_t), TARGET :: TopMesh, PrimaryMesh
      !------------------------------------------------------------------------------
      CHARACTER(:), ALLOCATABLE :: tmpname
      INTEGER :: i
@@ -5159,10 +5321,10 @@ CONTAINS
      Mesh => TopMesh
 
      DO WHILE( ASSOCIATED(Mesh) )
-       IF ( .NOT.ASSOCIATED( PrimaryMesh, Mesh) ) THEN
+       IF ( .NOT.ASSOCIATED(Mesh, PrimaryMesh) ) THEN
          Var => VariableGet( Mesh % Variables, Name, .TRUE.)
          IF ( ASSOCIATED( Var ) ) THEN
-           Var % Valid = .FALSE.
+           !Var % Valid = .FALSE.
            Var % PrimaryMesh => PrimaryMesh
            IF ( Var % DOFs > 1 ) THEN
 
@@ -5222,7 +5384,7 @@ CONTAINS
 !------------------------------------------------------------------------------
   SUBROUTINE WritePostFile( PostFile,ResultFile,Model,TimeCount,AppendFlag )
 !------------------------------------------------------------------------------
-    TYPE(Model_t), POINTER :: Model !< Everything. 
+    TYPE(Model_t), TARGET :: Model !< Everything.
     INTEGER :: TimeCount            !< How many steps to save
     LOGICAL, OPTIONAL :: AppendFlag !< Usually we append. This is also a sign that this is not ResultToPost. 
     CHARACTER(LEN=*) :: PostFile    !< Name of the Post file
@@ -6086,9 +6248,7 @@ SUBROUTINE GetNodalElementSize(Model,expo,noweight,h)
 
       CALL ParallelInitMatrix(Solver, Solver % Matrix )
 
-      Solver % Matrix % ParMatrix % ParEnv % ActiveComm = &
-                 Solver % Matrix % Comm
-      ParEnv => Solver % Matrix % ParMatrix % ParEnv
+      CALL SetMatrixParEnv( Solver % Matrix )
     END IF
   END IF
 
@@ -6155,7 +6315,7 @@ CONTAINS
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: STIFF(:,:), FORCE(:)
     INTEGER :: n
-    TYPE(Element_t), POINTER :: Element
+    TYPE(Element_t) :: Element
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: Basis(n),DetJ,LoadAtIP,Weight
     LOGICAL :: Stat
@@ -6245,6 +6405,7 @@ END SUBROUTINE GetNodalElementSize
 !------------------------------------------------------------------------------
 
     CALL Info('FreeSolver','Free solver matrix',Level=20)
+    Solver % Matrix => Null() ! problems...
     CALL FreeMatrix(Solver % Matrix)
 
     CALL Info('FreeSolver','Free solver miscellaneous',Level=20)
@@ -6255,11 +6416,39 @@ END SUBROUTINE GetNodalElementSize
       CALL Graph_Deallocate(Solver % ColourIndexList)
       DEALLOCATE( Solver % ColourIndexList )
     END IF
-        
+
 !------------------------------------------------------------------------------
   END SUBROUTINE FreeSolver
 !------------------------------------------------------------------------------
 
+!------------------------------------------------------------------------------
+!> Call <SolverName>_Finalize if exists
+!> TODO: Not tested
+!------------------------------------------------------------------------------
+SUBROUTINE FinalizeSolver(model, solver)
+!------------------------------------------------------------------------------
+
+  TYPE(Model_t) :: Model
+  TYPE(Solver_t) :: Solver
+  CHARACTER(:), ALLOCATABLE :: Name
+  LOGICAL :: Found, Transient
+  TYPE(C_FUNPTR) :: FinalProc
+!------------------------------------------------------------------------------
+
+  Name = ListGetString( Solver % values, 'Procedure', Found)
+  IF(Found) Then
+    FinalProc = GetProcAddr( Trim(Name)//'_Finalize', abort=.FALSE.)
+
+    IF (C_ASSOCIATED(FinalProc)) then
+      Transient = ListGetString(Model % Simulation, 'Simulation Type',Found)=='transient'
+      CALL Info('FreeModel','Finalize Solver: > '//trim(Name) // ' <',Level=20)
+      CALL ExecSolver(FinalProc, Model, Solver, Solver% dt, Transient)
+    END IF
+  END IF
+
+!------------------------------------------------------------------------------
+END SUBROUTINE
+!------------------------------------------------------------------------------
 
 !------------------------------------------------------------------------------
 !> Releases value list which includes all the sif definitions, for example.
@@ -6287,7 +6476,7 @@ END SUBROUTINE GetNodalElementSize
 !------------------------------------------------------------------------------
 !> Releases the whole model. 
 !------------------------------------------------------------------------------
- SUBROUTINE FreeModel(Model)
+  SUBROUTINE FreeModel(Model)
 !------------------------------------------------------------------------------
    TYPE(Model_t), POINTER :: Model
 !------------------------------------------------------------------------------
@@ -6326,6 +6515,7 @@ END SUBROUTINE GetNodalElementSize
    CALL Info('FreeModel','Freeing solvers',Level=15)  
    DO i=1,Model % NumberOfSolvers
      CALL Info('FreeModel','Solver: '//I2S(i),Level=20)
+     CALL FinalizeSolver(Model, Model % Solvers(i))
      CALL FreeSolver(Model % Solvers(i))
    END DO
    DEALLOCATE(Model % Solvers)

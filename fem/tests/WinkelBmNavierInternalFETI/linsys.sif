@@ -2,7 +2,11 @@
 
   Linear System Solver = "Feti"
 
-! Total feti seems to give wrong results!
+! Total feti used to give wrong results: with it the Dirichlet DOFs are not
+! eliminated from the local matrices but constrained by Lagrange coefficients,
+! and they were being left out of the interface compatibility conditions all
+! the same, so the copies of a constrained interface DOF were never tied
+! together. Fixed; both settings now give the reference norm here.
   Total Feti = Logical False
 
   Linear System Iterative Method = "CPG"
@@ -10,6 +14,8 @@
 ! ways to set the singular values, also "spqr" possible
   Linear System Direct Method = "MumpsLocal"
   Mumps Solve Singular = Logical True
+
+  Mumps percentage increase working space = 200
 
   Linear System Max Iterations = 1000
   Linear System Convergence Tolerance = 1.0e-8

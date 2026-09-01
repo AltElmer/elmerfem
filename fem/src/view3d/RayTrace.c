@@ -1068,12 +1068,37 @@ int RayHitGeometry( double FX,double FY,double FZ, double DX,double DY,double DZ
 
 }
 
+/*******************************************************************************
+
+Same, but against a precomputed candidate list instead of the whole model.
+
+Every ray of a patch pair runs between the same two patches, so it can only
+ever meet that pair's shaft candidates.  Culling once per pair and then
+testing the handful of survivors replaces one tree traversal per *ray* with
+one per *pair*, which is what makes a larger ray count affordable.
+
+*******************************************************************************/
+int RayHitCandidates( int *Cand, int nc, double FX,double FY,double FZ,
+                        double DX,double DY,double DZ )
+{
+    double L = sqrt(DX*DX + DY*DY + DZ*DZ);
+    int i,j,n;
+
+    for( i=0; i<nc; i++ )
+    {
+        j = Cand[i];
+        n = RTElements[j].GeometryType;
+        if ( (*RayHit[n])( &RTElements[j],FX,FY,FZ,DX,DY,DZ,L ) ) return TRUE;
+    }
+    return FALSE;
+}
+
 void VolumeBBox( VolumeBounds_t *Volume,Geometry_t *RTElements )
 {
     double xMin,yMin,zMin,xMax,yMax,zMax,x,y,z;
     int i,j,k,N, NC;
 
-    double U[] = {0.0,1.0,0.0,1.0}, V[] = {0.0,0.0,1.0,1.0};
+    double U[] = {0.0,1.0,0.0,1.0}, V[] = {0.0,0.0,1.0,1.0}, R;
  
     xMin = yMin = zMin =  1.0e20;
     xMax = yMax = zMax = -1.0e20;
@@ -1084,6 +1109,16 @@ void VolumeBBox( VolumeBounds_t *Volume,Geometry_t *RTElements )
          k = Volume->Elements[i];
          switch(RTElements[k].GeometryType)
          {
+            case GEOMETRY_CIRCLE:
+              NC = 0;
+	      R = RTElements[k].Circle->RMax;
+	      xMin = RTElements[k].Circle->CenterPoint.x - R;
+	      xMax = RTElements[k].Circle->CenterPoint.x + R;
+	      yMin = RTElements[k].Circle->CenterPoint.y - R;
+	      yMax = RTElements[k].Circle->CenterPoint.y + R;
+	      zMin = RTElements[k].Circle->CenterPoint.z;
+	      zMax = RTElements[k].Circle->CenterPoint.z;
+            break;
             case GEOMETRY_LINE:
               NC = 2; break;
             case GEOMETRY_TRIANGLE:
@@ -1130,6 +1165,8 @@ void VolumeDivide( VolumeBounds_t *Volume,int NBounds,Geometry_t *RT_Elements,in
 
     double U[] = { 0.0,1.0,0.0,1.0 }, V[] = { 0.0,0.0,1.0,1.0 }, x,y,z;
 
+    double xmin,xmax,ymin,ymax,zmin,zmax,R;
+
     VolumeBounds_t *LeftVolume,*RightVolume;
 
     int i,j,k,n,N,left,right;
@@ -1165,6 +1202,20 @@ void VolumeDivide( VolumeBounds_t *Volume,int NBounds,Geometry_t *RT_Elements,in
 
         switch(RTElements[k].GeometryType)
         {
+          case GEOMETRY_CIRCLE:
+            NC = 0;
+	    x = RTElements[k].Circle->CenterPoint.x;
+	    y = RTElements[k].Circle->CenterPoint.y;
+	    z = RTElements[k].Circle->CenterPoint.z;
+
+            if ( (x >= LeftVolume->BBox.XMin) && (x <= LeftVolume->BBox.XMax) )
+            if ( (y >= LeftVolume->BBox.YMin) && (y <= LeftVolume->BBox.YMax) )
+            if ( (z >= LeftVolume->BBox.ZMin) && (z <= LeftVolume->BBox.ZMax) )  left = TRUE;
+
+            if ( (x >= RightVolume->BBox.XMin) && (x <= RightVolume->BBox.XMax) )
+            if ( (y >= RightVolume->BBox.YMin) && (y <= RightVolume->BBox.YMax) )
+            if ( (z >= RightVolume->BBox.ZMin) && (z <= RightVolume->BBox.ZMax) ) right = TRUE;
+	  break;
           case GEOMETRY_LINE:
               NC = 2; break;
           case GEOMETRY_TRIANGLE:
@@ -1203,6 +1254,20 @@ void VolumeDivide( VolumeBounds_t *Volume,int NBounds,Geometry_t *RT_Elements,in
 
         switch(RTElements[k].GeometryType)
         {
+          case GEOMETRY_CIRCLE:
+            NC = 0;
+	    x = RTElements[k].Circle->CenterPoint.x;
+	    y = RTElements[k].Circle->CenterPoint.y;
+	    z = RTElements[k].Circle->CenterPoint.z;
+		 
+            if ( (x >= LeftVolume->BBox.XMin) && (x <= LeftVolume->BBox.XMax) )
+            if ( (y >= LeftVolume->BBox.YMin) && (y <= LeftVolume->BBox.YMax) )
+            if ( (z >= LeftVolume->BBox.ZMin) && (z <= LeftVolume->BBox.ZMax) )  left = TRUE;
+
+            if ( (x >= RightVolume->BBox.XMin) && (x <= RightVolume->BBox.XMax) )
+            if ( (y >= RightVolume->BBox.YMin) && (y <= RightVolume->BBox.YMax) )
+            if ( (z >= RightVolume->BBox.ZMin) && (z <= RightVolume->BBox.ZMax) ) right = TRUE;
+          break;
           case GEOMETRY_LINE:
             NC = 2; break;
           case GEOMETRY_TRIANGLE:

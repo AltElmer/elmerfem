@@ -122,6 +122,9 @@
 /* define HAVE_MUMPS */
 #cmakedefine HAVE_MUMPS
 
+/* define HAVE_MUMPS_DIST_RHS: Mumps 5.3+ distributed right-hand side */
+#cmakedefine HAVE_MUMPS_DIST_RHS
+
 /* Define if you have a PARPACK library. */
 #define HAVE_PARPACK
 
@@ -190,5 +193,7 @@
 #cmakedefine HAVE_ZOLTAN
 
 #cmakedefine HAVE_EXTOPTIM 
+
+#cmakedefine HAVE_ADIOS2
 
 #endif

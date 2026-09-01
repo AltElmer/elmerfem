@@ -52,7 +52,7 @@ SUBROUTINE AdvDiffSolver( Model,Solver,dt,TransientSimulation )
   INTEGER :: n, nb, nd, t, active
   INTEGER :: iter, maxiter
   LOGICAL :: Found
-  REAL(KIND=dp) :: TotArea, TotLen
+  REAL(KIND=dp) :: TotArea, TotLen, TotSrc
 !------------------------------------------------------------------------------
 
   CALL DefaultStart()
@@ -72,6 +72,7 @@ SUBROUTINE AdvDiffSolver( Model,Solver,dt,TransientSimulation )
     ! These are to test cutfem
     TotArea = 0.0_dp
     TotLen = 0.0_dp
+    TotSrc = 0.0_dp
     
 1   Active = GetNOFActive()
 
@@ -109,10 +110,12 @@ SUBROUTINE AdvDiffSolver( Model,Solver,dt,TransientSimulation )
   END DO
 
   CALL DefaultFinish()
-  
-  IF( ListGetLogical( GetSolverParams(),'CutFEM',Found) ) THEN
-    CALL ListAddConstReal(CurrentModel % Simulation,'res: cutfem total area',TotArea ) 
-    CALL ListAddConstReal(CurrentModel % Simulation,'res: cutfem total len',TotLen ) 
+
+  IF( ListGetLogical( GetSolverParams(),'CutFEM',Found) &
+      .OR. ListGetLogical( GetSolverParams(),'Integ Test',Found) ) THEN
+    CALL ListAddConstReal(CurrentModel % Simulation,'res: integ total area',TotArea ) 
+    CALL ListAddConstReal(CurrentModel % Simulation,'res: integ total len',TotLen ) 
+    CALL ListAddConstReal(CurrentModel % Simulation,'res: integ total src',TotSrc ) 
   END IF
  
 CONTAINS
@@ -122,7 +125,7 @@ CONTAINS
   SUBROUTINE LocalMatrix( Element, n, nd )
 !------------------------------------------------------------------------------
     INTEGER :: n, nd
-    TYPE(Element_t), POINTER :: Element
+    TYPE(Element_t), TARGET :: Element
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: diff_coeff(n), conv_coeff(n),react_coeff(n), &
                      time_coeff(n), D,C,R, rho,Velo(3,n),a(3), Weight
@@ -210,6 +213,7 @@ CONTAINS
 
       FORCE(1:nd) = FORCE(1:nd) + Weight * LoadAtIP * Basis(1:nd)
       TotArea = TotArea + Weight 
+      TotSrc = TotSrc + Weight * LoadAtIp
     END DO
 
     IF(TransientSimulation) CALL Default1stOrderTime(MASS,STIFF,FORCE)
@@ -225,7 +229,7 @@ CONTAINS
   SUBROUTINE LocalMatrixBC( Element, n, nd )
 !------------------------------------------------------------------------------
     INTEGER :: n, nd
-    TYPE(Element_t), POINTER :: Element
+    TYPE(Element_t), TARGET :: Element
 !------------------------------------------------------------------------------
     REAL(KIND=dp) :: Flux(n), Coeff(n), Ext_t(n), F,C,Ext, Weight
     REAL(KIND=dp) :: Basis(nd),dBasisdx(nd,3),DetJ,LoadAtIP
