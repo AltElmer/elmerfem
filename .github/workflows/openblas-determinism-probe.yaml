@@ -79,9 +79,14 @@ jobs:
             rm -f "$LOG"
             ctest -R '^mgdyn_harmonic_wire$' > /tmp/run.log 2>&1
             local rc=$?
+            # Print the whole line rather than parsing a number out of it. A
+            # previous version used sed 's/.*Norm = \([0-9.E+-]*\).*/\1/', whose
+            # greedy .* skipped past "Norm = <computed>" to match
+            # "RefNorm = <reference>", so every run reported the same constant
+            # and the probe could not have detected any variation at all.
             local norm
             norm=$(grep -E 'CompareToReferenceSolution: Solver 4' "$LOG" 2>/dev/null \
-                   | head -1 | sed -E 's/.*Norm = ([0-9.E+-]+).*/\1/')
+                   | head -1 | sed -E 's/^[[:space:]]*//')
             if [ -z "$norm" ]; then
               echo "NO NORM (ctest rc=$rc) - is $LOG present? $([ -f "$LOG" ] && echo yes || echo no)"
               tail -5 /tmp/run.log | sed 's/^/      /'
