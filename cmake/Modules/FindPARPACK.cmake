@@ -23,13 +23,17 @@ IF(NOT PARPACK_FOUND)
   MESSAGE(STATUS "Finding parpack libraries")
   # Try to find with CMake config file of upstream parpack.
   FIND_PACKAGE(PARPACK CONFIG NAMES arpack arpackng arpack-ng parpack parpackng parpack-ng)
-  IF(PARPACK_FOUND)
+  # As in FindARPACK.cmake: the package can be reported found while the target
+  # was never created, because Debian and Ubuntu ship a config whose include()
+  # of its own targets file fails. GET_TARGET_PROPERTY on a missing target is a
+  # hard error, so require the target too and let the manual fallback below run.
+  IF(PARPACK_FOUND AND TARGET parpack)
     GET_TARGET_PROPERTY(PARPACK_INCLUDE_DIR parpack INTERFACE_INCLUDE_DIRECTORIES)
     # Most likely arpack and parpack are packed togeher (like in Arch linux)
     # or they share the same include directory even in splitted packages (parpack-dev depends on arpack-dev)
     # So in this point ARPACK_INCLUDE_DIR has to be defined or the information is loaded into the arpack
     # interface
-    IF(NOT PARPACK_INCLUDE_DIR)
+    IF(NOT PARPACK_INCLUDE_DIR AND TARGET arpack)
       GET_TARGET_PROPERTY(PARPACK_INCLUDE_DIR arpack INTERFACE_INCLUDE_DIRECTORIES)
     ENDIF()
     GET_TARGET_PROPERTY(PARPACK_LIBRARIES parpack IMPORTED_LOCATION_RELEASE)

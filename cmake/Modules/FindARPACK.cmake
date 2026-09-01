@@ -24,7 +24,13 @@ IF(NOT ARPACK_FOUND)
   MESSAGE(STATUS "Finding arpack libraries")
   # Try to find with CMake config file of upstream arpack.
   FIND_PACKAGE(ARPACK CONFIG NAMES arpack arpackng arpack-ng)
-  IF(ARPACK_FOUND)
+  # ARPACK_FOUND can be true while the target does not exist. Debian and Ubuntu
+  # ship an arpack-ng config whose include() of its own targets file fails, so
+  # the package is reported found but no "arpack" target is created. Since
+  # GET_TARGET_PROPERTY on a missing target is a hard error, configure died
+  # here before it could reach the manual fallback below that was written for
+  # exactly this case. Require the target as well.
+  IF(ARPACK_FOUND AND TARGET arpack)
     GET_TARGET_PROPERTY(ARPACK_INCLUDE_DIR arpack INTERFACE_INCLUDE_DIRECTORIES)
     GET_TARGET_PROPERTY(ARPACK_LIBRARIES arpack IMPORTED_LOCATION_RELEASE)
     # Check if a debug build type was used
