@@ -88,6 +88,29 @@ jobs:
                <(grep -E 'ROCALUTION|Hypre|HYPRE|Trilinos|Pardiso|Mumps|MUMPS|Cholmod|CHOLMOD|NetCDF|Scotch' /tmp/configB.log | sort -u) \
                || true
 
+      - name: does OMP_NUM_THREADS change the answer
+        run: |
+          set +e
+          REL=fem/tests/mgdyn_harmonic_wire/test-stdout.log
+          # The two values seen in CI came from steps with different OpenMP
+          # settings, not from two identical runs: the test step pins
+          # OMP_NUM_THREADS=1, the re-run step sets neither. If Elmer's own
+          # OpenMP thread count moves the norm, that explains both values and
+          # this was never nondeterminism.
+          probe_omp () {
+            local n=$1
+            rm -f "buildA/${REL}"
+            if [ "$n" = "unset" ]; then unset OMP_NUM_THREADS; else export OMP_NUM_THREADS=$n; fi
+            ( cd buildA && ctest -R '^mgdyn_harmonic_wire$' > /tmp/o.log 2>&1 )
+            local rc=$?
+            grep -E 'CompareToReferenceSolution: Solver 4' "buildA/${REL}" 2>/dev/null \
+              | head -1 | sed -E 's/^[[:space:]]*//' | sed "s/$/ (rc=$rc)/"
+          }
+          echo "real cores: $(getconf _NPROCESSORS_ONLN)"
+          for n in 1 2 4 unset 1; do
+            echo "  OMP_NUM_THREADS=${n}: $(probe_omp $n)"
+          done
+
       - name: run the test in both builds
         env:
           OMP_NUM_THREADS: 1
