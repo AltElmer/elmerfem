@@ -1,23 +1,28 @@
 name: openblas-determinism-probe
 
-# Temporary experiment for ElmerCSC/elmerfem#901.
+# Experiment for ElmerCSC/elmerfem#901, second attempt.
 #
-# Question: does leaving OPENBLAS_NUM_THREADS unpinned make a numeric test
-# non-reproducible, and does pinning it make the result identical run to run?
+# The first probe found no variation, but its Solver 4 norm (1.57936883E+03)
+# matched neither value seen in CI (1.57922266E+03 failing, 1.57940095E+03
+# passing), so it was not computing the same problem and its stability proved
+# nothing. Two things differed: the build was reduced, and the test ran alone
+# on an idle runner instead of inside a full suite.
 #
-# Method: build once, then run mgdyn_harmonic_wire ten times, five with
-# OPENBLAS_NUM_THREADS unset and five with it pinned to 1, printing the norm
-# reported by CompareToReferenceSolution for Solver 4 each time. OMP_NUM_THREADS
-# is pinned to 1 throughout, so it is the only variable that changes.
+# This version fixes both. The build matches the "Linux GCC serial" CI entry
+# (gcc, MPI off, OpenMP on, external deps, BLA_VENDOR=OpenBLAS, CHOLMOD on),
+# and load is reintroduced explicitly with background CPU burners rather than
+# by running the whole suite, so the machine is busy without spending 20
+# minutes per sample.
 #
-# Reading the result: identical norms in the unpinned arm would refute the
-# hypothesis in #901. Varying norms unpinned and identical norms pinned would
-# support it.
+# Arms, ten samples each:
+#   A  unpinned, idle    - reproduces the first probe, expected stable
+#   B  unpinned, loaded  - the condition under test
+#   C  pinned,   loaded  - the proposed fix under the same load
+#
+# Reading it: if B varies and C does not, #901 is supported. If B is stable,
+# load is not the missing variable either and the mechanism is wrong.
 
 on:
-  # Push rather than workflow_dispatch: dispatch is only offered for workflows
-  # present on the default branch, and this one deliberately lives on a scratch
-  # branch. Scoped to that branch so it cannot fire anywhere else.
   push:
     branches: [ci/openblas-determinism-probe]
   workflow_dispatch:
@@ -25,7 +30,7 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 150
 
     steps:
       - uses: actions/checkout@v4
@@ -33,21 +38,29 @@ jobs:
       - name: install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gfortran libopenblas-dev libblas-dev liblapack-dev \
-                                  cmake ninja-build
-          echo "--- which OpenBLAS variant is installed ---"
+          # Mirrors the package set the CI setup-linux action installs for a
+          # gcc / external-deps entry, minus the MPI and GUI packages this
+          # build does not use.
+          sudo apt-get install -y cmake gfortran g++ gcc ninja-build \
+                                  libblas-dev liblapack-dev libopenblas-dev \
+                                  libsuitesparse-dev
+          echo "--- OpenBLAS variant ---"
           dpkg -l | grep -i openblas || true
 
       - name: configure and build
         run: |
+          # Matches the "Linux GCC serial" matrix entry in the consolidated CI
+          # workflow: mpi OFF, openmp ON, plus its cmake-extra.
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBLA_VENDOR=OpenBLAS \
+            -DWITH_CHOLMOD=ON \
             -DWITH_MPI=OFF \
             -DWITH_OpenMP=ON \
+            -DWITH_LUA=ON \
             -DWITH_ELMERGUI=OFF \
             -DWITH_ElmerIce=OFF
-          cmake --build build
+          cmake --build build -j$(getconf _NPROCESSORS_ONLN)
 
       - name: probe
         working-directory: build
@@ -56,50 +69,58 @@ jobs:
         run: |
           set +e
 
-          # Real core count. GNU nproc honours OMP_NUM_THREADS, so plain
-          # "nproc" reports 1 inside this step and would hide how many threads
-          # OpenBLAS could actually use.
-          echo "OMP_NUM_THREADS=${OMP_NUM_THREADS}"
+          CORES=$(getconf _NPROCESSORS_ONLN)
+          echo "real cores: ${CORES}"
           echo "nproc (clamped by OMP_NUM_THREADS): $(nproc)"
-          echo "real cores: $(getconf _NPROCESSORS_ONLN)"
           echo ""
 
-          echo "=== does ctest see the test? ==="
-          ctest -N -R mgdyn_harmonic_wire
-          echo ""
-
-          # The solver's stdout never reaches ctest: test_macros.cmake captures
-          # it with EXECUTE_PROCESS(OUTPUT_VARIABLE ...) and writes it to
-          # test-stdout.log in the test's binary directory. Reading ctest's own
-          # output finds nothing when the test passes, which is why an earlier
-          # version of this probe returned empty for every run.
           LOG=fem/tests/mgdyn_harmonic_wire/test-stdout.log
 
           run_once () {
             rm -f "$LOG"
             ctest -R '^mgdyn_harmonic_wire$' > /tmp/run.log 2>&1
             local rc=$?
-            # Print the whole line rather than parsing a number out of it. A
-            # previous version used sed 's/.*Norm = \([0-9.E+-]*\).*/\1/', whose
-            # greedy .* skipped past "Norm = <computed>" to match
-            # "RefNorm = <reference>", so every run reported the same constant
-            # and the probe could not have detected any variation at all.
-            local norm
-            norm=$(grep -E 'CompareToReferenceSolution: Solver 4' "$LOG" 2>/dev/null \
+            local line
+            line=$(grep -E 'CompareToReferenceSolution: Solver 4' "$LOG" 2>/dev/null \
                    | head -1 | sed -E 's/^[[:space:]]*//')
-            if [ -z "$norm" ]; then
-              echo "NO NORM (ctest rc=$rc) - is $LOG present? $([ -f "$LOG" ] && echo yes || echo no)"
-              tail -5 /tmp/run.log | sed 's/^/      /'
+            if [ -z "$line" ]; then
+              echo "NO NORM (rc=$rc, log present: $([ -f "$LOG" ] && echo yes || echo no))"
+              tail -4 /tmp/run.log | sed 's/^/      /'
             else
-              echo "$norm (rc=$rc)"
+              echo "$line (rc=$rc)"
             fi
           }
 
-          echo "=== arm A: OPENBLAS_NUM_THREADS unset (current CI behaviour) ==="
+          start_load () {
+            # Saturate every core so OpenBLAS sees a busy machine, standing in
+            # for the ~1000-test suite the CI job runs alongside this test.
+            for _ in $(seq 1 "${CORES}"); do
+              ( while :; do :; done ) &
+            done
+            LOAD_PIDS=$(jobs -p)
+            sleep 3
+          }
+          stop_load () {
+            for p in ${LOAD_PIDS}; do kill "$p" 2>/dev/null; done
+            wait 2>/dev/null
+            LOAD_PIDS=""
+            sleep 2
+          }
+
+          echo "=== arm A: unpinned, idle (control - first probe was stable here) ==="
           unset OPENBLAS_NUM_THREADS
-          for i in 1 2 3 4 5; do echo "  run $i: $(run_once)"; done
+          for i in $(seq 1 10); do echo "  A$i: $(run_once)"; done
 
           echo ""
-          echo "=== arm B: OPENBLAS_NUM_THREADS=1 (proposed fix) ==="
+          echo "=== arm B: unpinned, loaded (the condition under test) ==="
+          unset OPENBLAS_NUM_THREADS
+          start_load
+          for i in $(seq 1 10); do echo "  B$i: $(run_once)"; done
+          stop_load
+
+          echo ""
+          echo "=== arm C: OPENBLAS_NUM_THREADS=1, loaded (proposed fix) ==="
           export OPENBLAS_NUM_THREADS=1
-          for i in 1 2 3 4 5; do echo "  run $i: $(run_once)"; done
+          start_load
+          for i in $(seq 1 10); do echo "  C$i: $(run_once)"; done
+          stop_load
