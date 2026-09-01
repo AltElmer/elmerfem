@@ -9,7 +9,7 @@ Bundled libraries
 | library | bundled at | switch to use a system copy | notes |
 | --- | --- | --- | --- |
 | METIS | `elmergrid/src/metis-5.1.0` | `-DEXTERNAL_METIS=ON` | mesh partitioning, used by ElmerGrid |
-| UMFPACK | `umfpack/` | `-DEXTERNAL_UMFPACK=ON` | part of SuiteSparse; enabled by `WITH_UMFPACK`, which is `ON` by default |
+| UMFPACK | `umfpack/` | `-DEXTERNAL_UMFPACK=ON` | part of SuiteSparse; enabled by `WITH_UMFPACK`, which is `ON` by default. See the note below |
 | ARPACK | `mathlibs/src/arpack` | `-DEXTERNAL_ARPACK=ON` | eigenvalue solver |
 | PARPACK | `mathlibs/src/parpack` | `-DEXTERNAL_PARPACK=ON` | parallel ARPACK; only used with MPI |
 | Lua | `contrib/lua-5.1.5` | `-DEXTERNAL_LUA=ON` | only used when `WITH_LUA=ON`; Lua 5.1 specifically |
@@ -17,6 +17,15 @@ Bundled libraries
 | BLAS, LAPACK | `mathlibs/src/blas`, `mathlibs/src/lapack` | `-DBLA_VENDOR=...` | CMake's own mechanism, for example `-DBLA_VENDOR=OpenBLAS` |
 
 `EXTERNAL_LUA` and `EXTERNAL_ZOLTAN` used to be spelled `USE_SYSTEM_LUA` and `USE_SYSTEM_ZOLTAN`. The old names still work and print a deprecation warning.
+
+A note on the bundled UMFPACK
+-----------------------------
+
+The bundled copy is UMFPACK 5.1, which is deliberate rather than neglect: 5.1 is the last LGPL release, and later SuiteSparse versions are GPL. That matters to users who link Elmer against modules of their own that are not open source, and it is why the bundled copy has not simply been updated.
+
+It does mean the bundled copy is from 2007 and does not carry the fixes made upstream since, so anyone without that licensing constraint is better served by a current SuiteSparse via `-DEXTERNAL_UMFPACK=ON`. UMFPACK's own `Doc/ChangeLog` in [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse) lists what has changed.
+
+Building without UMFPACK at all is also supported, see #578 and #579.
 
 Because `contrib/Zoltan_v3.83` is a submodule, a plain `git clone` leaves it empty. Clone with `--recurse-submodules`, or run `git submodule update --init` afterwards, if you intend to build with `WITH_Zoltan=ON` and without `EXTERNAL_ZOLTAN`.
 
@@ -50,16 +59,16 @@ On Debian or Ubuntu:
 ```
 sudo apt-get install cmake gfortran g++ gcc ninja-build \
      libopenblas-dev libblas-dev liblapack-dev libopenmpi-dev \
-     libmetis-dev libsuitesparse-dev libarpack2-dev libparpack2-dev \
-     liblua5.1-0-dev
+     libmetis-dev libsuitesparse-dev liblua5.1-0-dev
 
 cmake -S . -B build -G Ninja \
       -DBLA_VENDOR=OpenBLAS \
       -DEXTERNAL_METIS=ON -DEXTERNAL_UMFPACK=ON \
-      -DEXTERNAL_ARPACK=ON -DEXTERNAL_PARPACK=ON \
       -DWITH_LUA=ON -DEXTERNAL_LUA=ON
 cmake --build build
 ```
+
+`EXTERNAL_ARPACK` and `EXTERNAL_PARPACK` are left out of that example on purpose. Debian and Ubuntu ship an `arpack-ng` CMake config whose `include()` of its own targets file fails, and the resulting errors are raised inside `FIND_PACKAGE` before this project can react to them, so configure aborts. Distributions that package arpack-ng correctly are unaffected.
 
 On MSYS2 the equivalent is exercised by the `build-windows-mingw` workflow, which builds both bundled and external in the same matrix. The `ubuntu-external-deps` workflow does the same on Linux.
 

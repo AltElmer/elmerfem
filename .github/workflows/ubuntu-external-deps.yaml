@@ -10,6 +10,15 @@ name: ubuntu-external-deps
 # Deliberately a separate workflow rather than another dimension on build.yaml:
 # a second dimension there would double an already long matrix, and this needs
 # a different package set anyway.
+#
+# ARPACK and PARPACK are deliberately left bundled here. Debian and Ubuntu ship
+# an arpack-ng CMake config whose include() of its own targets file fails, and
+# those errors are raised inside FIND_PACKAGE, before anything in this project
+# can guard against them, so configure cannot succeed with -DEXTERNAL_ARPACK=ON
+# on those distributions. FindARPACK.cmake was hardened separately so that a
+# broken config falls through to the manual search instead of aborting, but the
+# distribution's own errors remain fatal. That is a packaging bug rather than
+# one of ours; add them back here when it is fixed.
 
 on:
   workflow_dispatch:
@@ -43,10 +52,9 @@ jobs:
             libopenmpi-dev \
             libmetis-dev \
             libsuitesparse-dev \
-            libarpack2-dev libparpack2-dev \
             liblua5.1-0-dev
           echo "--- versions of the libraries being linked instead of bundled ---"
-          for p in libmetis-dev libsuitesparse-dev libarpack2-dev libparpack2-dev liblua5.1-0-dev; do
+          for p in libmetis-dev libsuitesparse-dev liblua5.1-0-dev; do
             printf '%-24s %s\n' "$p" "$(dpkg-query -W -f='${Version}' "$p" 2>/dev/null || echo ABSENT)"
           done
 
@@ -63,8 +71,6 @@ jobs:
             -DWITH_LUA=ON \
             -DEXTERNAL_METIS=ON \
             -DEXTERNAL_UMFPACK=ON \
-            -DEXTERNAL_ARPACK=ON \
-            -DEXTERNAL_PARPACK=ON \
             -DEXTERNAL_LUA=ON
 
       - name: confirm the external switches actually took
