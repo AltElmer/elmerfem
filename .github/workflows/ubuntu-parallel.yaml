@@ -50,7 +50,7 @@ jobs:
           submodules: false
           fetch-depth: 0
 
-      - name: init and update Zoltan submodule
+      - name: init and update submodules
         run: |
           git submodule init
           # Self-hosted runners keep the workspace between runs.  If a previous

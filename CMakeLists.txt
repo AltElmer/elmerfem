@@ -767,6 +767,18 @@ ENDIF()
 #    SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
 # ENDIF("${isSystemDir}" STREQUAL "-1")
 
+# MATC is a submodule, and this ADD_SUBDIRECTORY is unconditional, so a clone
+# made without it leaves an empty directory and CMake stops with "does not
+# contain a CMakeLists.txt file", which does not tell anyone what to do. Say it
+# plainly instead. contrib/Zoltan_v3.83 does not need this because WITH_Zoltan
+# defaults to OFF, so that directory is only entered when it was asked for.
+IF(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/matc/CMakeLists.txt")
+  MESSAGE(FATAL_ERROR
+    "The matc submodule is not checked out.\n"
+    "Run:  git submodule update --init\n"
+    "or clone with:  git clone --recurse-submodules")
+ENDIF()
+
 ADD_SUBDIRECTORY(matc)
 
 
