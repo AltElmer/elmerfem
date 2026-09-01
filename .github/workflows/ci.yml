@@ -392,7 +392,18 @@ jobs:
         timeout-minutes: 150
         env:
           CTEST_OUTPUT_ON_FAILURE: 1
+          # Both are needed, and OMP_NUM_THREADS alone is not enough. The
+          # runners install libopenblas0-pthread, the pthread build of
+          # OpenBLAS, which drives its own thread pool and does not read
+          # OMP_NUM_THREADS. Leaving it unpinned lets the BLAS thread count
+          # follow runner load, which changes reduction order and therefore
+          # the last digits of every dot product. Iterative solvers amplify
+          # that: mgdyn_harmonic_wire returned Solver 4 norms of 1.57922266E+03
+          # and 1.57940095E+03 on two runs of the same build, a relative
+          # difference of 1.1e-04 against a reference tolerance near 1e-05, so
+          # it failed one run and passed the other.
           OMP_NUM_THREADS: 1
+          OPENBLAS_NUM_THREADS: 1
         run: |
           cd ${GITHUB_WORKSPACE}/build
           NPROC=$(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 2)
@@ -419,7 +430,15 @@ jobs:
         if: always() && steps.gate.outputs.run == 'true' && steps.run-ctest.outcome == 'failure'
         timeout-minutes: 60
         env:
+          # Must match the test step exactly. This step exists to show why a
+          # test failed, and it can only do that if it reproduces the same
+          # conditions. Previously it inherited neither thread setting, so a
+          # test could fail under the test step and pass here purely because
+          # the two ran with different threading, which reads as flakiness and
+          # hides the real cause.
           CTEST_OUTPUT_ON_FAILURE: 1
+          OMP_NUM_THREADS: 1
+          OPENBLAS_NUM_THREADS: 1
         run: |
           cd ${GITHUB_WORKSPACE}/build
           # get names of failed tests and strip potential "_np*" suffix
