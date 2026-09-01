@@ -299,10 +299,10 @@ jobs:
           mkdir ${GITHUB_WORKSPACE}/build
           cd ${GITHUB_WORKSPACE}/build
 
-          # Built as a bash array rather than a ${{ }} expression: a multi-line
-          # expression injects literal newlines into this script and truncates
-          # the cmake command, and a single-line one would be word split, losing
-          # the spaces inside the OpenMP flag values.
+          # Built as a bash array rather than a workflow expression: a
+          # multi-line expression injects literal newlines into this script and
+          # truncates the cmake command, and a single-line one would be word
+          # split, losing the spaces inside the OpenMP flag values.
           _omp=(-DWITH_OpenMP=OFF)
           if [ "${{ matrix.openmp }}" = "ON" ]; then
             _omp=(-DWITH_OpenMP=ON
