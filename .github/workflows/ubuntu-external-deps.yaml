@@ -79,12 +79,17 @@ jobs:
           # use and this job would pass while testing nothing.
           echo "--- EXTERNAL_* as cmake recorded them ---"
           grep -E '^EXTERNAL_[A-Z]+:BOOL' build/CMakeCache.txt
-          missing=$(grep -E '^EXTERNAL_[A-Z]+:BOOL=OFF' build/CMakeCache.txt || true)
-          if [ -n "$missing" ]; then
-            echo "::error::an EXTERNAL_ switch was requested but is OFF in the cache:"
-            echo "$missing"
-            exit 1
-          fi
+
+          # Only the ones this job actually asks for. ARPACK and PARPACK are
+          # expected to stay OFF here, see the note at the top of this file, so
+          # asserting on every EXTERNAL_ switch would fail by design.
+          for v in EXTERNAL_METIS EXTERNAL_UMFPACK EXTERNAL_LUA; do
+            if ! grep -q "^${v}:BOOL=ON$" build/CMakeCache.txt; then
+              echo "::error::${v} was requested on the command line but is not ON in the cache"
+              exit 1
+            fi
+          done
+          echo "all requested EXTERNAL_ switches took effect"
 
       - name: build
         run: cmake --build build -j$(getconf _NPROCESSORS_ONLN)
