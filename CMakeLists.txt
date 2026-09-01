@@ -116,7 +116,42 @@ SET(INCLUDE_ELMER_MODULES "" CACHE STRING "Semicolon separated list of solver mo
 # Let user select if the contiguous attribute is used or not
 SET(USE_CONTIGUOUS FALSE CACHE BOOL "Use contiguous attribute")
 
-OPTION(EXTERNAL_METIS "Link to external Metis library" OFF)
+# ---------------------------------------------------------------------------
+# Bundled versus external third party libraries
+#
+# Elmer ships copies of several third party libraries and can link a system
+# copy instead. Those switches already existed, but most of them were only
+# read and never declared, so they did not show up in ccmake or cmake-gui and
+# a misspelled one silently fell back to the bundled copy with no warning.
+# They also used three different spellings. Declare them together, in one
+# naming scheme, so the set is discoverable and greppable.
+#
+#   library      bundled at                        option
+#   METIS        elmergrid/src/metis-5.1.0         EXTERNAL_METIS
+#   UMFPACK      umfpack/                          EXTERNAL_UMFPACK
+#   ARPACK       mathlibs/src/arpack               EXTERNAL_ARPACK
+#   PARPACK      mathlibs/src/parpack              EXTERNAL_PARPACK
+#   Lua          contrib/lua-5.1.5                 EXTERNAL_LUA
+#   Zoltan       contrib/Zoltan_v3.83 (submodule)  EXTERNAL_ZOLTAN
+#   BLAS/LAPACK  mathlibs/src/{blas,lapack}        BLA_VENDOR (CMake builtin)
+# ---------------------------------------------------------------------------
+OPTION(EXTERNAL_METIS   "Link a system METIS instead of the bundled copy"   OFF)
+OPTION(EXTERNAL_UMFPACK "Link a system UMFPACK instead of the bundled copy" OFF)
+OPTION(EXTERNAL_ARPACK  "Link a system ARPACK instead of the bundled copy"  OFF)
+OPTION(EXTERNAL_PARPACK "Link a system PARPACK instead of the bundled copy" OFF)
+OPTION(EXTERNAL_LUA     "Link a system Lua instead of the bundled copy"     OFF)
+OPTION(EXTERNAL_ZOLTAN  "Link a system Zoltan instead of the submodule"     OFF)
+
+# Two of these used to be spelled differently. Keep the old names working and
+# say so, rather than silently ignoring a setting somebody already relies on.
+IF(USE_SYSTEM_LUA)
+  MESSAGE(DEPRECATION "USE_SYSTEM_LUA is deprecated, use EXTERNAL_LUA instead.")
+  SET(EXTERNAL_LUA ON)
+ENDIF()
+IF(USE_SYSTEM_ZOLTAN)
+  MESSAGE(DEPRECATION "USE_SYSTEM_ZOLTAN is deprecated, use EXTERNAL_ZOLTAN instead.")
+  SET(EXTERNAL_ZOLTAN ON)
+ENDIF()
 
 MARK_AS_ADVANCED(WITH_ELMERPOST)
 
@@ -188,7 +223,7 @@ IF(${CMAKE_Fortran_COMPILER_ID} MATCHES "GNU")
 ENDIF()
 
 IF(WITH_LUA)
-  IF(NOT(${USE_SYSTEM_LUA}))
+  IF(NOT EXTERNAL_LUA)
     ADD_SUBDIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/contrib/lua-5.1.5/)
     set(LUA_LIBRARIES luaelmer CACHE STRING "")
     set(LUA_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/contrib/lua-5.1.5/src CACHE STRING "")
@@ -384,7 +419,7 @@ ENDIF()
 IF(WITH_Zoltan)
   # ZOLTAN Remeshing
   MESSAGE(STATUS "------------------------------------------------")
-  IF(NOT USE_SYSTEM_ZOLTAN)
+  IF(NOT EXTERNAL_ZOLTAN)
     MESSAGE(STATUS "Building Zoltan mesh repartitioner")
     ADD_SUBDIRECTORY(contrib/Zoltan_v3.83)
     SET(HAVE_ZOLTAN TRUE CACHE BOOL "Has Zoltan tools for mesh (re)partitioning" )
@@ -901,7 +936,7 @@ ELSE()
   MESSAGE(STATUS " PARPACK library: Using internal Elmer library")
   MESSAGE(STATUS "------------------------------------------------")
 ENDIF()
-IF(WITH_Zoltan AND NOT USE_SYSTEM_ZOLTAN)
+IF(WITH_Zoltan AND NOT EXTERNAL_ZOLTAN)
   MESSAGE(STATUS " Zoltan: building bundled code")
   MESSAGE(STATUS "------------------------------------------------")
 ELSEIF(WITH_Zoltan AND HAVE_ZOLTAN)

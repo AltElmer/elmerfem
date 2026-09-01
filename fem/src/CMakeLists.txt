@@ -184,7 +184,7 @@ IF(HAVE_PARMMG)
 ENDIF()
 
 IF(HAVE_ZOLTAN)
-  IF(USE_SYSTEM_ZOLTAN)
+  IF(EXTERNAL_ZOLTAN)
     TARGET_LINK_LIBRARIES(elmersolver Zoltan::zoltan)
   ELSE()
     ADD_DEPENDENCIES(elmersolver zoltan)

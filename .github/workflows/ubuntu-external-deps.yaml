@@ -1,0 +1,94 @@
+name: ubuntu-external-deps
+
+# Builds Elmer against system copies of the libraries it otherwise bundles.
+#
+# build-windows-mingw already has a "dependencies: [bundled, external]" matrix
+# and is green, so the external path is exercised on Windows. Nothing exercises
+# it on Linux, which means a change that breaks building against system METIS,
+# UMFPACK, ARPACK, PARPACK or Lua is only caught on one platform.
+#
+# Deliberately a separate workflow rather than another dimension on build.yaml:
+# a second dimension there would double an already long matrix, and this needs
+# a different package set anyway.
+
+on:
+  workflow_dispatch:
+  push:
+    paths-ignore:
+      - '**.nix'
+      - 'flake.lock'
+  pull_request:
+    paths-ignore:
+      - '**.nix'
+      - 'flake.lock'
+
+concurrency: ci-ubuntu-external-deps-${{ github.ref }}
+
+jobs:
+  external-deps:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    name: ubuntu-24.04 (system libraries)
+
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+
+      - name: install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake gfortran g++ gcc ninja-build \
+            libopenblas-dev libblas-dev liblapack-dev \
+            libopenmpi-dev \
+            libmetis-dev \
+            libsuitesparse-dev \
+            libarpack2-dev libparpack2-dev \
+            liblua5.1-0-dev
+          echo "--- versions of the libraries being linked instead of bundled ---"
+          for p in libmetis-dev libsuitesparse-dev libarpack2-dev libparpack2-dev liblua5.1-0-dev; do
+            printf '%-24s %s\n' "$p" "$(dpkg-query -W -f='${Version}' "$p" 2>/dev/null || echo ABSENT)"
+          done
+
+      - name: configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/usr" \
+            -DBLA_VENDOR=OpenBLAS \
+            -DWITH_MPI=ON \
+            -DMPI_TEST_MAXPROC=2 \
+            -DMPIEXEC_PREFLAGS=--allow-run-as-root \
+            -DWITH_OpenMP=ON \
+            -DWITH_LUA=ON \
+            -DEXTERNAL_METIS=ON \
+            -DEXTERNAL_UMFPACK=ON \
+            -DEXTERNAL_ARPACK=ON \
+            -DEXTERNAL_PARPACK=ON \
+            -DEXTERNAL_LUA=ON
+
+      - name: confirm the external switches actually took
+        run: |
+          # A switch that is silently ignored would leave the bundled copy in
+          # use and this job would pass while testing nothing.
+          echo "--- EXTERNAL_* as cmake recorded them ---"
+          grep -E '^EXTERNAL_[A-Z]+:BOOL' build/CMakeCache.txt
+          missing=$(grep -E '^EXTERNAL_[A-Z]+:BOOL=OFF' build/CMakeCache.txt || true)
+          if [ -n "$missing" ]; then
+            echo "::error::an EXTERNAL_ switch was requested but is OFF in the cache:"
+            echo "$missing"
+            exit 1
+          fi
+
+      - name: build
+        run: cmake --build build -j$(getconf _NPROCESSORS_ONLN)
+
+      - name: test
+        id: run-ctest
+        timeout-minutes: 120
+        env:
+          CTEST_OUTPUT_ON_FAILURE: 1
+          OMP_NUM_THREADS: 1
+        run: |
+          cd build
+          ctest . -j$(getconf _NPROCESSORS_ONLN) -LE slow --timeout 300
