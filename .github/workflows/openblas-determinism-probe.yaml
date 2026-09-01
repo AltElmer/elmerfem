@@ -1,0 +1,71 @@
+name: openblas-determinism-probe
+
+# Temporary experiment for ElmerCSC/elmerfem#901.
+#
+# Question: does leaving OPENBLAS_NUM_THREADS unpinned make a numeric test
+# non-reproducible, and does pinning it make the result identical run to run?
+#
+# Method: build once, then run mgdyn_harmonic_wire ten times, five with
+# OPENBLAS_NUM_THREADS unset and five with it pinned to 1, printing the norm
+# reported by CompareToReferenceSolution for Solver 4 each time. OMP_NUM_THREADS
+# is pinned to 1 throughout, so it is the only variable that changes.
+#
+# Reading the result: identical norms in the unpinned arm would refute the
+# hypothesis in #901. Varying norms unpinned and identical norms pinned would
+# support it.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran libopenblas-dev libblas-dev liblapack-dev \
+                                  cmake ninja-build
+          echo "--- which OpenBLAS variant is installed ---"
+          dpkg -l | grep -i openblas || true
+
+      - name: configure and build
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBLA_VENDOR=OpenBLAS \
+            -DWITH_MPI=OFF \
+            -DWITH_OpenMP=ON \
+            -DWITH_ELMERGUI=OFF \
+            -DWITH_ElmerIce=OFF
+          cmake --build build
+
+      - name: probe
+        working-directory: build
+        env:
+          OMP_NUM_THREADS: 1
+        run: |
+          run_once () {
+            # -V so the solver output is printed even when the test passes;
+            # without it ctest is silent on success and there is no norm to read.
+            ctest -R '^mgdyn_harmonic_wire$' -V 2>&1 \
+              | grep -E 'CompareToReferenceSolution: Solver 4' \
+              | head -1 \
+              | sed -E 's/.*Norm = ([0-9.E+-]+).*/\1/'
+          }
+
+          echo "=== arm A: OPENBLAS_NUM_THREADS unset (current CI behaviour) ==="
+          unset OPENBLAS_NUM_THREADS
+          for i in 1 2 3 4 5; do echo "  run $i: $(run_once)"; done
+
+          echo ""
+          echo "=== arm B: OPENBLAS_NUM_THREADS=1 (proposed fix) ==="
+          export OPENBLAS_NUM_THREADS=1
+          for i in 1 2 3 4 5; do echo "  run $i: $(run_once)"; done
+
+          echo ""
+          echo "nproc on this runner: $(nproc)"
