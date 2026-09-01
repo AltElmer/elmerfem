@@ -1,26 +1,28 @@
 name: openblas-determinism-probe
 
-# Experiment for ElmerCSC/elmerfem#901, second attempt.
+# Experiment for ElmerCSC/elmerfem#901, third attempt.
 #
-# The first probe found no variation, but its Solver 4 norm (1.57936883E+03)
-# matched neither value seen in CI (1.57922266E+03 failing, 1.57940095E+03
-# passing), so it was not computing the same problem and its stability proved
-# nothing. Two things differed: the build was reduced, and the test ran alone
-# on an idle runner instead of inside a full suite.
+# Where this stands: OpenBLAS threading is refuted. Thirty runs across idle,
+# loaded, pinned and unpinned all produced 1.57936883E+03 to every digit.
 #
-# This version fixes both. The build matches the "Linux GCC serial" CI entry
-# (gcc, MPI off, OpenMP on, external deps, BLA_VENDOR=OpenBLAS, CHOLMOD on),
-# and load is reintroduced explicitly with background CPU burners rather than
-# by running the whole suite, so the machine is busy without spending 20
-# minutes per sample.
+# But that value matches neither number seen in CI (1.57922266E+03 failing,
+# 1.57940095E+03 passing), so the probe is still not computing the same
+# problem, and its stability cannot speak for the CI job.
 #
-# Arms, ten samples each:
-#   A  unpinned, idle    - reproduces the first probe, expected stable
-#   B  unpinned, loaded  - the condition under test
-#   C  pinned,   loaded  - the proposed fix under the same load
+# Remaining difference under test: the dependency set. The CI setup-linux
+# action installs libhypre-dev, libmumps-dev, libparmetis-dev, libptscotch-dev,
+# trilinos-all-dev, libnetcdff-dev and librocalution-dev. Earlier probes
+# installed none of them. WITH_ROCALUTION is only forced off for non-gcc
+# compilers, so a gcc build can pick ROCALUTION up when the package is there.
 #
-# Reading it: if B varies and C does not, #901 is supported. If B is stable,
-# load is not the missing variable either and the mechanism is wrong.
+# Method: build the same source twice on one runner, once without those
+# packages and once with them, and run mgdyn_harmonic_wire ten times against
+# each. Everything else is held equal.
+#
+# Reading it: if the two builds give different norms, the dependency set is
+# the differentiator and the next step is to bisect which package. If both
+# give 1.57936883E+03, the difference is somewhere else and this line of
+# enquiry is closed too.
 
 on:
   push:
@@ -30,28 +32,21 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 180
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: install dependencies
+      - name: base dependencies
         run: |
           sudo apt-get update
-          # Mirrors the package set the CI setup-linux action installs for a
-          # gcc / external-deps entry, minus the MPI and GUI packages this
-          # build does not use.
           sudo apt-get install -y cmake gfortran g++ gcc ninja-build \
                                   libblas-dev liblapack-dev libopenblas-dev \
                                   libsuitesparse-dev
-          echo "--- OpenBLAS variant ---"
-          dpkg -l | grep -i openblas || true
 
-      - name: configure and build
+      - name: build A - without the extra CI packages
         run: |
-          # Matches the "Linux GCC serial" matrix entry in the consolidated CI
-          # workflow: mpi OFF, openmp ON, plus its cmake-extra.
-          cmake -S . -B build -G Ninja \
+          cmake -S . -B buildA -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBLA_VENDOR=OpenBLAS \
             -DWITH_CHOLMOD=ON \
@@ -59,68 +54,66 @@ jobs:
             -DWITH_OpenMP=ON \
             -DWITH_LUA=ON \
             -DWITH_ELMERGUI=OFF \
-            -DWITH_ElmerIce=OFF
-          cmake --build build -j$(getconf _NPROCESSORS_ONLN)
+            -DWITH_ElmerIce=OFF 2>&1 | tee /tmp/configA.log
+          cmake --build buildA -j$(getconf _NPROCESSORS_ONLN)
 
-      - name: probe
-        working-directory: build
+      - name: add the extra CI packages
+        run: |
+          # The set the CI setup-linux action installs for a gcc external-deps
+          # entry, less the MPI and Qt packages this build does not use.
+          sudo apt-get install -y libhypre-dev libparmetis-dev libptscotch-dev \
+                                  libnetcdff-dev librocalution-dev || true
+          echo "--- installed? ---"
+          for p in libhypre-dev libparmetis-dev libptscotch-dev libnetcdff-dev librocalution-dev; do
+            printf '%-22s %s\n' "$p" "$(dpkg -s "$p" >/dev/null 2>&1 && echo present || echo ABSENT)"
+          done
+
+      - name: build B - with the extra CI packages
+        run: |
+          cmake -S . -B buildB -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBLA_VENDOR=OpenBLAS \
+            -DWITH_CHOLMOD=ON \
+            -DWITH_MPI=OFF \
+            -DWITH_OpenMP=ON \
+            -DWITH_LUA=ON \
+            -DWITH_ELMERGUI=OFF \
+            -DWITH_ElmerIce=OFF 2>&1 | tee /tmp/configB.log
+          cmake --build buildB -j$(getconf _NPROCESSORS_ONLN)
+
+      - name: what did the two configures differ on
+        run: |
+          echo "=== lines present in one configure log but not the other ==="
+          diff <(grep -E 'ROCALUTION|Hypre|HYPRE|Trilinos|Pardiso|Mumps|MUMPS|Cholmod|CHOLMOD|NetCDF|Scotch' /tmp/configA.log | sort -u) \
+               <(grep -E 'ROCALUTION|Hypre|HYPRE|Trilinos|Pardiso|Mumps|MUMPS|Cholmod|CHOLMOD|NetCDF|Scotch' /tmp/configB.log | sort -u) \
+               || true
+
+      - name: run the test in both builds
         env:
           OMP_NUM_THREADS: 1
         run: |
           set +e
+          REL=fem/tests/mgdyn_harmonic_wire/test-stdout.log
 
-          CORES=$(getconf _NPROCESSORS_ONLN)
-          echo "real cores: ${CORES}"
-          echo "nproc (clamped by OMP_NUM_THREADS): $(nproc)"
-          echo ""
-
-          LOG=fem/tests/mgdyn_harmonic_wire/test-stdout.log
-
-          run_once () {
-            rm -f "$LOG"
-            ctest -R '^mgdyn_harmonic_wire$' > /tmp/run.log 2>&1
+          run_in () {
+            local dir=$1
+            rm -f "${dir}/${REL}"
+            ( cd "$dir" && ctest -R '^mgdyn_harmonic_wire$' > /tmp/run.log 2>&1 )
             local rc=$?
             local line
-            line=$(grep -E 'CompareToReferenceSolution: Solver 4' "$LOG" 2>/dev/null \
+            line=$(grep -E 'CompareToReferenceSolution: Solver 4' "${dir}/${REL}" 2>/dev/null \
                    | head -1 | sed -E 's/^[[:space:]]*//')
             if [ -z "$line" ]; then
-              echo "NO NORM (rc=$rc, log present: $([ -f "$LOG" ] && echo yes || echo no))"
+              echo "NO NORM (rc=$rc)"
               tail -4 /tmp/run.log | sed 's/^/      /'
             else
               echo "$line (rc=$rc)"
             fi
           }
 
-          start_load () {
-            # Saturate every core so OpenBLAS sees a busy machine, standing in
-            # for the ~1000-test suite the CI job runs alongside this test.
-            for _ in $(seq 1 "${CORES}"); do
-              ( while :; do :; done ) &
-            done
-            LOAD_PIDS=$(jobs -p)
-            sleep 3
-          }
-          stop_load () {
-            for p in ${LOAD_PIDS}; do kill "$p" 2>/dev/null; done
-            wait 2>/dev/null
-            LOAD_PIDS=""
-            sleep 2
-          }
-
-          echo "=== arm A: unpinned, idle (control - first probe was stable here) ==="
-          unset OPENBLAS_NUM_THREADS
-          for i in $(seq 1 10); do echo "  A$i: $(run_once)"; done
+          echo "=== build A: without the extra packages (expect 1.57936883E+03) ==="
+          for i in $(seq 1 10); do echo "  A$i: $(run_in buildA)"; done
 
           echo ""
-          echo "=== arm B: unpinned, loaded (the condition under test) ==="
-          unset OPENBLAS_NUM_THREADS
-          start_load
-          for i in $(seq 1 10); do echo "  B$i: $(run_once)"; done
-          stop_load
-
-          echo ""
-          echo "=== arm C: OPENBLAS_NUM_THREADS=1, loaded (proposed fix) ==="
-          export OPENBLAS_NUM_THREADS=1
-          start_load
-          for i in $(seq 1 10); do echo "  C$i: $(run_once)"; done
-          stop_load
+          echo "=== build B: with the extra packages ==="
+          for i in $(seq 1 10); do echo "  B$i: $(run_in buildB)"; done
