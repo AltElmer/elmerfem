@@ -76,6 +76,7 @@ jobs:
           sudo apt -qq update
           sudo apt install -y ${{ matrix.compiler-pkgs }} cmake gfortran \
             libopenblas-dev libopenmpi-dev libmumps-dev libparmetis-dev \
+            libarpack2-dev libparpack2-dev \
             libqwt-qt5-dev qtscript5-dev libqt5svg5-dev
 
       - name: configure

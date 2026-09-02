@@ -64,7 +64,6 @@
                 "fhutiter"
                 "license_texts"
                 "matc"
-                "mathlibs"
                 "meshgen2d"
                 "misc"
                 "pics"
@@ -89,6 +88,7 @@
                 mpi
                 blas
                 (liblapack.override {blas64 = true;})
+                arpack
                 tbb
               ]
               ++ extraBuildInputs;

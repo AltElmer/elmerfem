@@ -114,7 +114,8 @@ jobs:
           sudo apt -qq update
           sudo apt install -y ${{ matrix.compiler-pkgs }} cmake gfortran \
             $([ "${{ matrix.os }}" == "ubuntu-24.04-arm" ] && echo "libblas-dev liblapack-dev" || echo "libopenblas-dev") \
-            $([ "${{ matrix.mpi }}" == "with" ] && echo "libhypre-dev") \
+            libarpack2-dev \
+            $([ "${{ matrix.mpi }}" == "with" ] && echo "libhypre-dev libparpack2-dev") \
             $([ "${{ matrix.mpi }}" == "with" ] && echo "libopenmpi-dev libmumps-dev libparmetis-dev") \
             $([ "${{ matrix.compiler }}" == "gcc" ] && [ "${{ matrix.mpi }}" == "without" ] && echo "libmumps-seq-dev") \
             $([ "${{ matrix.compiler }}" == "gcc" ] && echo "libsuitesparse-dev") \

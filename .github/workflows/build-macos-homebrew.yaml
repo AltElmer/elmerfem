@@ -59,7 +59,7 @@ jobs:
             ${{ matrix.blas == 'openblas' && 'openblas' || '' }} \
             ${{ matrix.blas == 'accelerate' && 'veclibfort' || '' }} \
             open-mpi \
-            libomp suitesparse \
+            libomp suitesparse arpack \
             qwt vtk opencascade expat
           echo "HOMEBREW_PREFIX=$(brew --prefix)" >> $GITHUB_ENV
 
