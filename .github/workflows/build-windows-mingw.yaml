@@ -53,6 +53,13 @@ jobs:
         shell: bash
         run: git -C contrib/Zoltan_v3.83 fetch --unshallow 2>/dev/null || true
 
+      # parpack is installed on every leg, including the ones built without
+      # MPI, and that is not an oversight. MSYS2 splits ARPACK-NG across two
+      # packages but ships a single arpackngTargets.cmake in the arpack one,
+      # which declares a "parpack" imported target unconditionally. On a
+      # machine with only arpack, FIND_PACKAGE(ARPACK) therefore fails while
+      # reading that file, complaining that libparpack.dll.a does not exist
+      # rather than anything about ARPACK or about MPI.
       - name: install dependencies
         uses: msys2/setup-msys2@v2
         with:
@@ -71,7 +78,7 @@ jobs:
             mumps:p
             suitesparse:p
             arpack:p
-            ${{ matrix.mpi == 'with' && 'parpack:p' || 'openblas:p' }}
+            parpack:p
             qt6-declarative:p
             qwt-qt6:p
             vtk:p
