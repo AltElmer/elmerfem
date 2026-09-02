@@ -79,7 +79,18 @@ jobs:
             qwt-qt6:p
             vtk:p
             seacas:p
-            adios2:p
+            exprtk:p
+            hdf5:p
+            libogg:p
+            libpng:p
+            libtheora:p
+            libxml2:p
+            nlohmann-json:p
+            openvr:p
+            proj:p
+            python:p
+            qt6-base:p
+            sqlite3:p            adios2:p
             anari-sdk:p
             boost:p
             cgns:p
