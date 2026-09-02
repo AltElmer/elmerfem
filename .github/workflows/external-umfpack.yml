@@ -72,7 +72,7 @@ jobs:
         run: |
           set -e
           brew install gcc cmake ninja suite-sparse openblas
-          fc=$(ls $(brew --prefix)/bin/gfortran-1* 2>/dev/null | sort -V | tail -1)
+          fc=$( { ls $(brew --prefix)/bin/gfortran-1* 2>/dev/null || true; } | sort -V | tail -1 || true )
           [ -n "$fc" ] || { echo "::error::no gfortran under $(brew --prefix)/bin"; exit 1; }
           echo "FC=$fc" >> "$GITHUB_ENV"
 
@@ -99,18 +99,29 @@ jobs:
           fi
           echo "ok: no umfpack/ in the source tree"
 
+      # Informational, and deliberately unable to fail: it reports which
+      # UMFPACK is on the box, while the step that actually decides anything
+      # is "the UMFPACK it found is a system one" below.
+      #
+      # Every command here is guarded because GitHub runs bash with -e and
+      # -o pipefail. find exits non-zero when any directory in its list is
+      # missing, and half this list is missing on each platform by design
+      # (/opt/homebrew on Linux, /usr/include on none of them reliably), so
+      # the unguarded version failed all six jobs on a step that asserts
+      # nothing.
       - name: which UMFPACK the package manager supplied
         shell: bash
         run: |
-          set -e
-          hdr=$(find /usr/include /usr/local/include /opt/homebrew/include \
-                     "${RUNNER_TEMP:-/tmp}" -name umfpack.h 2>/dev/null | head -1)
+          hdr=$( { find /usr/include /usr/local/include /opt/homebrew/include \
+                        /usr/include/suitesparse /opt/homebrew/include/suitesparse \
+                        -name umfpack.h 2>/dev/null || true; } | head -1 || true )
           if [ -n "$hdr" ]; then
             echo "header: $hdr"
             grep -E '#define UMFPACK_(MAIN|SUB|SUBSUB)_VERSION|#define UMFPACK_DATE' "$hdr" || true
           else
             echo "header not located by this probe; the configure step below is the real check"
           fi
+          exit 0
 
       - name: configure and build
         if: '!matrix.mingw'
@@ -140,7 +151,10 @@ jobs:
         shell: bash
         run: |
           set -e
-          line=$(grep 'UMFPACK library:' configure.log | tail -1)
+          # || true because bash runs with pipefail here: grep exits 1 when it
+          # matches nothing, which would end the step before the check below
+          # got to say what was actually wrong.
+          line=$(grep 'UMFPACK library:' configure.log | tail -1 || true)
           echo "$line"
           [ -n "$line" ] || { echo "::error::configure never reported a UMFPACK library"; exit 1; }
           case "$line" in
@@ -190,7 +204,7 @@ jobs:
             -DWITH_UMFPACK=ON -DEXTERNAL_UMFPACK=OFF > off.log 2>&1
           rc=$?
           set -e
-          cat off.log | tail -30
+          tail -30 off.log
           if [ "$rc" -eq 0 ]; then
             echo "::error::configure accepted -DEXTERNAL_UMFPACK=OFF; it should have stopped"
             exit 1
