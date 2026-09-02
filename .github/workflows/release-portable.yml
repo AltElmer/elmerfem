@@ -69,11 +69,30 @@ jobs:
             libarpack2-dev libparpack2-dev \
             libnetcdf-dev libnetcdff-dev
 
+      # One toolchain for all three languages, GNU throughout.
+      #
+      # AppleClang ships no OpenMP, so -DWITH_OpenMP=ON fails at configure
+      # with "Could NOT find OpenMP_C". Homebrew's libomp would fix that
+      # symptom, but the Fortran here is gfortran either way, and pairing
+      # AppleClang's OpenMP runtime with gfortran's in one process is a good
+      # way to get an intermittent problem later rather than an error now.
+      # Homebrew's gcc brings its own OpenMP for all three languages.
       - name: dependencies (macos)
         if: runner.os == 'macOS'
         run: |
+          set -e
           brew install gcc cmake ninja open-mpi openblas suite-sparse arpack netcdf
-          echo "FC=$(ls $(brew --prefix)/bin/gfortran-* | sort -V | tail -1)" >> "$GITHUB_ENV"
+          gccbin=$(ls $(brew --prefix)/bin/gcc-1* 2>/dev/null | sort -V | tail -1)
+          gxxbin=$(ls $(brew --prefix)/bin/g++-1* 2>/dev/null | sort -V | tail -1)
+          fcbin=$(ls $(brew --prefix)/bin/gfortran-1* 2>/dev/null | sort -V | tail -1)
+          for v in gccbin gxxbin fcbin; do
+            eval "val=\$$v"
+            [ -n "$val" ] || { echo "::error::could not find $v under $(brew --prefix)/bin"; exit 1; }
+          done
+          echo "CC=$gccbin"  >> "$GITHUB_ENV"
+          echo "CXX=$gxxbin" >> "$GITHUB_ENV"
+          echo "FC=$fcbin"   >> "$GITHUB_ENV"
+          echo "using $gccbin, $gxxbin, $fcbin"
 
       # The solver, the mesh tools and the libraries. ElmerGUI is deliberately
       # out of scope for this workflow: it brings Qt, VTK and OpenCASCADE, and
@@ -232,7 +251,16 @@ jobs:
         shell: bash
         run: |
           set -e
-          for b in ElmerSolver ElmerGrid; do
+          # ElmerSolver_mpi, not ElmerSolver. fem/src/CMakeLists.txt sets
+          # ELMERSOLVER_OUTPUT_NAME to ElmerSolver_mpi when WITH_MPI is on,
+          # which this build has, so looking for the plain name found nothing
+          # and reported a missing solver on a build that had produced one.
+          # Matched by prefix, and the name that was found is printed, so the
+          # check does not have to be right about which variant was built.
+          solver=$(find install -name 'ElmerSolver*' -type f -perm -u+x | head -1)
+          echo "solver: ${solver:-MISSING}"
+          [ -n "$solver" ] || { echo "::error::no ElmerSolver binary in the archive"; exit 1; }
+          for b in ElmerGrid; do
             f=$(find install -name "$b" -type f | head -1)
             echo "$b: ${f:-MISSING}"
             [ -n "$f" ] || { echo "::error::$b is not in the archive"; exit 1; }
@@ -297,7 +325,7 @@ jobs:
           tar xzf dl/*.tar.gz
           d="elmerfem-${{ matrix.target }}"
           eg=$(find "$d" -name ElmerGrid -type f | head -1)
-          es=$(find "$d" -name ElmerSolver -type f | head -1)
+          es=$(find "$d" -name 'ElmerSolver*' -type f -perm -u+x | head -1)
           echo "ElmerGrid : $eg"
           echo "ElmerSolver: $es"
           out=$("$eg" 2>&1 | head -20 || true)
