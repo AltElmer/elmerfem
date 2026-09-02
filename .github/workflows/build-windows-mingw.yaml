@@ -67,6 +67,18 @@ jobs:
             qt6-declarative:p
             qwt-qt6:p
             vtk:p
+            # VTK's own vtk-config.cmake does find_package(SEACASIoss), so
+            # configuring ElmerGUI fails without it:
+            #
+            #   CMake Error at .../vtk/VTK-vtk-module-find-packages.cmake:544:
+            #     Could not find a package configuration file provided by
+            #     "SEACASIoss"
+            #   Call Stack: .../vtk-config.cmake:171
+            #               ElmerGUI/CMakeLists.txt:145 (FIND_PACKAGE)
+            #
+            # pacman does not pull it in as a dependency of vtk, so it has to
+            # be asked for by name.
+            seacas:p
             adios2:p
             anari-sdk:p
             boost:p
