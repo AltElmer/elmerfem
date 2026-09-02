@@ -198,7 +198,14 @@ IF(HAVE_ZOLTAN)
 ENDIF()
 
 # ElmerSolver libraries
-SET(ELMERSOLVER_LIBRARIES matc fhuti binio arpack)
+#
+# ARPACK is named through ARPACK_LIBRARIES rather than as the bare word
+# "arpack". It used to be the latter, which happened to work while the
+# in-tree copy provided a target of that name, and which degraded to a plain
+# -larpack once EXTERNAL_ARPACK was on: the link then depended on the system
+# library sitting somewhere the linker searched by default, whatever path
+# FIND_PACKAGE(ARPACK) had actually reported.
+SET(ELMERSOLVER_LIBRARIES matc fhuti binio ${ARPACK_LIBRARIES})
 
 IF(UMFPACK_FOUND)
   # external implementation of UMFPACK
@@ -287,7 +294,7 @@ IF(WITH_MPI)
   TARGET_LINK_LIBRARIES(Solver_TGT Elmer::MPI_Fortran elmersolver ${ELMERSOLVER_LIBRARIES})
 
   # Library object
-  TARGET_LINK_LIBRARIES(elmersolver Elmer::MPI_Fortran ${ELMERSOLVER_LIBRARIES} parpack)
+  TARGET_LINK_LIBRARIES(elmersolver Elmer::MPI_Fortran ${ELMERSOLVER_LIBRARIES} ${PARPACK_LIBRARIES})
 
   SET(SERIAL_SOLVER_FILEPATH "${CMAKE_INSTALL_PREFIX}/bin/ElmerSolver")
   SET(MPI_SOLVER_FILEPATH "${CMAKE_INSTALL_PREFIX}/bin/${ELMERSOLVER_OUTPUT_NAME}")
@@ -419,19 +426,13 @@ IF(CMAKE_SYSTEM_NAME MATCHES "Windows" AND CPACK_BUNDLE_EXTRA_WINDOWS_DLLS)
 
   ADD_DEPENDENCIES(elmersolver_bundle elmersolver)
 
-  IF(NOT EXTERNAL_ARPACK)
-    ADD_CUSTOM_COMMAND(
-      TARGET elmersolver_bundle POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E rm -f ${CMAKE_BINARY_DIR}/bundle/bin/libarpack.dll
-    )
-  ENDIF()
-
-  IF(NOT EXTERNAL_PARPACK)
-    ADD_CUSTOM_COMMAND(
-      TARGET elmersolver_bundle POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E rm -f ${CMAKE_BINARY_DIR}/bundle/bin/libparpack.dll
-    )
-  ENDIF()
+  # There used to be two POST_BUILD steps here deleting libarpack.dll and
+  # libparpack.dll from the bundle whenever EXTERNAL_(P)ARPACK was off, because
+  # the in-tree copies were installed by their own targets and the bundle would
+  # otherwise carry them twice. Both libraries are now always the platform's,
+  # so the bundle needs them: keeping those steps would strip the system DLLs
+  # out of the very bundle that exists to be self-contained, and the guard
+  # would fire by default, since EXTERNAL_ARPACK is normally not set at all.
 
   INSTALL(DIRECTORY ${CMAKE_BINARY_DIR}/bundle/bin/
     DESTINATION "bin")

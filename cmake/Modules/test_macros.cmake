@@ -16,8 +16,11 @@
 #
 # PATH matters just as much, and for a reason that only bites on Windows:
 # there is no RPATH there, so a freshly linked ViewFactors.exe finds
-# libelmersolver, fhutiter, matc, arpack and the compiler's own runtime DLLs
-# through PATH alone.  A child spawned before any macro ran therefore does not
+# libelmersolver, fhutiter, matc and the compiler's own runtime DLLs through
+# PATH alone.  ARPACK and PARPACK are no longer among the directories added
+# here: they come from the platform now, so their DLLs sit wherever the
+# toolchain installed them, which is already on PATH for anyone who can run
+# the compiler.  A child spawned before any macro ran therefore does not
 # start at all -- the loader kills it with STATUS_DLL_NOT_FOUND before main(),
 # so it writes nothing, not even to the error log the test redirected.  The
 # older radiation tests hid this: their ViewFactors call quietly did nothing
@@ -35,7 +38,7 @@ IF(DEFINED BINARY_DIR)
     SET(ENV{PATH} "${BINARY_DIR}/meshgen2d/src/:${BINARY_DIR}/fem/src:$ENV{PATH}")
   ELSE()
     GET_FILENAME_COMPONENT(COMPILER_DIRECTORY ${CMAKE_Fortran_COMPILER} PATH)
-    SET(ENV{PATH} "$ENV{ELMER_HOME};$ENV{ELMER_LIB};${BINARY_DIR}/meshgen2d/src/;${BINARY_DIR}/fhutiter/src;${BINARY_DIR}/matc/src;${BINARY_DIR}/mathlibs/src/arpack;${BINARY_DIR}/mathlibs/src/parpack;${COMPILER_DIRECTORY};$ENV{PATH}")
+    SET(ENV{PATH} "$ENV{ELMER_HOME};$ENV{ELMER_LIB};${BINARY_DIR}/meshgen2d/src/;${BINARY_DIR}/fhutiter/src;${BINARY_DIR}/matc/src;${COMPILER_DIRECTORY};$ENV{PATH}")
   ENDIF()
 ENDIF()
 
@@ -186,7 +189,7 @@ MACRO(RUN_ELMER_TEST)
   IF(WIN32)
     SET(ENV{PATH} "${BINARY_DIR}/meshgen2d/src/;${BINARY_DIR}/fem/src;$ENV{PATH}")
     GET_FILENAME_COMPONENT(COMPILER_DIRECTORY ${CMAKE_Fortran_COMPILER} PATH)
-    SET(ENV{PATH} "$ENV{ELMER_HOME};$ENV{ELMER_LIB};${BINARY_DIR}/fhutiter/src;${BINARY_DIR}/matc/src;${BINARY_DIR}/mathlibs/src/arpack;${BINARY_DIR}/mathlibs/src/parpack;${COMPILER_DIRECTORY};$ENV{PATH}")
+    SET(ENV{PATH} "$ENV{ELMER_HOME};$ENV{ELMER_LIB};${BINARY_DIR}/fhutiter/src;${BINARY_DIR}/matc/src;${COMPILER_DIRECTORY};$ENV{PATH}")
   ENDIF(WIN32)
 
   # Query number of physical CPU cores of the host
@@ -291,7 +294,7 @@ MACRO(EXECUTE_ELMER_SOLVER SIFNAME)
   IF(WIN32)
     SET(ENV{PATH} "${BINARY_DIR}/meshgen2d/src/;${BINARY_DIR}/fem/src;$ENV{PATH}")
     GET_FILENAME_COMPONENT(COMPILER_DIRECTORY ${CMAKE_Fortran_COMPILER} PATH)
-    SET(ENV{PATH} "$ENV{ELMER_HOME};$ENV{ELMER_LIB};${BINARY_DIR}/fhutiter/src;${BINARY_DIR}/matc/src;${BINARY_DIR}/mathlibs/src/arpack;${BINARY_DIR}/mathlibs/src/parpack;${COMPILER_DIRECTORY};$ENV{PATH}")
+    SET(ENV{PATH} "$ENV{ELMER_HOME};$ENV{ELMER_LIB};${BINARY_DIR}/fhutiter/src;${BINARY_DIR}/matc/src;${COMPILER_DIRECTORY};$ENV{PATH}")
   ENDIF(WIN32)
 
   EXECUTE_PROCESS(COMMAND ${ELMERSOLVER_BIN} ${SIFNAME}
@@ -311,7 +314,7 @@ MACRO(EXECUTE_ELMER_SOLVER_MPI SIFNAME)
   IF(WIN32)
     SET(ENV{PATH} "${BINARY_DIR}/meshgen2d/src/;${BINARY_DIR}/fem/src;$ENV{PATH}")
     GET_FILENAME_COMPONENT(COMPILER_DIRECTORY ${CMAKE_Fortran_COMPILER} PATH)
-    SET(ENV{PATH} "$ENV{ELMER_HOME};$ENV{ELMER_LIB};${BINARY_DIR}/fhutiter/src;${BINARY_DIR}/matc/src;${BINARY_DIR}/mathlibs/src/arpack;${BINARY_DIR}/mathlibs/src/parpack;$ENV{PATH};${COMPILER_DIRECTORY};$ENV{PATH}")
+    SET(ENV{PATH} "$ENV{ELMER_HOME};$ENV{ELMER_LIB};${BINARY_DIR}/fhutiter/src;${BINARY_DIR}/matc/src;$ENV{PATH};${COMPILER_DIRECTORY};$ENV{PATH}")
   ENDIF(WIN32)
 
   IF(WITH_MPI)

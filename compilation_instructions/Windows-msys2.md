@@ -10,7 +10,7 @@ Build Elmer on Windows using MSYS2
 * Install dependencies of Elmer from MSYS2:
 ```
 pacman -S --needed base-devel git pactoys
-pacboy -S --needed toolchain:p cc:p fc:p cmake:p openblas:p parmetis:p mumps:p suitesparse:p qt6-declarative:p qwt-qt6:p opencascade:p
+pacboy -S --needed toolchain:p cc:p fc:p cmake:p openblas:p arpack:p parmetis:p mumps:p suitesparse:p qt6-declarative:p qwt-qt6:p opencascade:p
 ```
 * If you'd like to build with VTK, also install the following packages:
 ```

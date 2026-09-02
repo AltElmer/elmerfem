@@ -1,0 +1,199 @@
+name: external-mathlibs
+
+# Elmer built against the BLAS, LAPACK and ARPACK the platform packages, with
+# no copies of them inside the tree.
+#
+# Building proves little here, so the check is Elmer's eigenvalue tests. Every
+# test labelled "eigen" goes through ARPACK, so if the system library is not
+# found, not linked, or gives different answers, those tests fail rather than
+# the build.
+
+on:
+  push:
+    branches: [feat/external-mathlibs]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: external-mathlibs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64 (gcc)
+            os: ubuntu-24.04
+          - name: linux-arm64 (gcc)
+            os: ubuntu-24.04-arm
+          - name: linux-x86_64 (gcc, MPI)
+            os: ubuntu-24.04
+            mpi: true
+            cmake-extra: -DWITH_MPI=ON
+          - name: macos-arm64 (gcc)
+            os: macos-14
+            brew: true
+          - name: macos-x86_64 (gcc)
+            os: macos-15-intel
+            brew: true
+          - name: windows-x86_64 (mingw)
+            os: windows-2022
+            mingw: true
+          # No windows-arm64 job. MSYS2 packages ARPACK and OpenBLAS for
+          # CLANGARM64, but no Fortran compiler for it. The gap is the
+          # toolchain, not this change.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: dependencies (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gfortran cmake ninja-build \
+            libopenblas-dev liblapack-dev libarpack2-dev libsuitesparse-dev
+          if [ "${{ matrix.mpi }}" = "true" ]; then
+            sudo apt-get install -y libopenmpi-dev openmpi-bin libparpack2-dev
+          fi
+
+      - name: dependencies (macos)
+        if: matrix.brew
+        run: |
+          set -e
+          brew install gcc cmake ninja openblas arpack suite-sparse
+          fc=$(ls $(brew --prefix)/bin/gfortran-1* 2>/dev/null | sort -V | tail -1)
+          [ -n "$fc" ] || { echo "::error::no gfortran under $(brew --prefix)/bin"; exit 1; }
+          echo "FC=$fc" >> "$GITHUB_ENV"
+
+      # parpack is installed even though this job builds without MPI. MSYS2's
+      # arpack package ships an arpackngTargets.cmake that declares a "parpack"
+      # imported target unconditionally, while the library itself lives in a
+      # separate package, so FIND_PACKAGE(ARPACK) fails on a machine that has
+      # only arpack, with an error about a missing libparpack.dll.a rather than
+      # anything about ARPACK.
+      - name: dependencies (mingw)
+        if: matrix.mingw
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc-fortran
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-openblas
+            mingw-w64-ucrt-x86_64-arpack
+            mingw-w64-ucrt-x86_64-parpack
+            mingw-w64-ucrt-x86_64-suitesparse
+
+      - name: there is no mathlibs directory
+        shell: bash
+        run: |
+          if [ -e mathlibs ]; then
+            echo "::error::mathlibs/ is still in the tree; this branch is supposed to have removed it"
+            exit 1
+          fi
+          echo "ok: no mathlibs/ in the source tree"
+
+      - name: configure and build
+        if: '!matrix.mingw'
+        shell: bash
+        run: |
+          set -e
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_ELMERGUI=OFF -DWITH_ELMERPOST=OFF \
+            ${{ matrix.cmake-extra || '-DWITH_MPI=OFF' }} 2>&1 | tee configure.log
+          cmake --build build -j 4
+
+      - name: configure and build (mingw)
+        if: matrix.mingw
+        shell: msys2 {0}
+        run: |
+          set -e
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_ELMERGUI=OFF -DWITH_ELMERPOST=OFF -DWITH_MPI=OFF \
+            2>&1 | tee configure.log
+          cmake --build build -j 4
+
+      # CMake reported an ARPACK; this says it is not one inside the checkout,
+      # which is the whole point of the change.
+      - name: the ARPACK it found is a system one
+        shell: bash
+        run: |
+          set -e
+          line=$(grep 'ARPACK library:' configure.log | grep -v PARPACK | tail -1)
+          echo "$line"
+          [ -n "$line" ] || { echo "::error::configure never reported an ARPACK library"; exit 1; }
+          case "$line" in
+            *"$PWD"*) echo "::error::the ARPACK found is inside the checkout"; exit 1 ;;
+          esac
+          echo "ok: ARPACK comes from outside the source tree"
+
+      - name: run the eigenvalue tests
+        if: '!matrix.mingw'
+        shell: bash
+        run: |
+          set -e
+          ctest --test-dir build -L eigen --output-on-failure -j 2 --timeout 600 | tee ctest.log
+          n=$(grep -cE '^ *[0-9]+/[0-9]+ +Test ' ctest.log || true)
+          echo "eigen tests run: $n"
+          # An empty selection makes ctest exit 0, which would otherwise read
+          # as a pass for a check that never ran.
+          [ "$n" -ge 20 ] || { echo "::error::only $n eigen tests ran; expected around 27"; exit 1; }
+
+      - name: run the eigenvalue tests (mingw)
+        if: matrix.mingw
+        shell: msys2 {0}
+        run: |
+          set -e
+          ctest --test-dir build -L eigen --output-on-failure -j 2 --timeout 600 | tee ctest.log
+          n=$(grep -cE '^ *[0-9]+/[0-9]+ +Test ' ctest.log || true)
+          echo "eigen tests run: $n"
+          [ "$n" -ge 20 ] || { echo "::error::only $n eigen tests ran; expected around 27"; exit 1; }
+
+  refuses-the-old-options:
+    name: -DEXTERNAL_ARPACK=OFF fails with an explanation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake ninja-build \
+            libopenblas-dev liblapack-dev libarpack2-dev libsuitesparse-dev
+
+      - name: it must refuse, and name a package
+        run: |
+          set +e
+          cmake -S . -B build-off -G Ninja -DWITH_MPI=OFF -DWITH_ELMERGUI=OFF \
+            -DEXTERNAL_ARPACK=OFF > off.log 2>&1
+          rc=$?
+          set -e
+          tail -25 off.log
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::configure accepted -DEXTERNAL_ARPACK=OFF; it should have stopped"
+            exit 1
+          fi
+          grep -q 'libarpack2-dev' off.log || {
+            echo "::error::it failed, but without telling anyone what to install"; exit 1; }
+          echo "ok: refused, and the message names the packages"
+
+      # ON must still work: this option is what Elmer's own Windows CI passes,
+      # and a change that broke it would break that workflow.
+      - name: -DEXTERNAL_ARPACK=ON still configures
+        run: |
+          cmake -S . -B build-on -G Ninja -DWITH_MPI=OFF -DWITH_ELMERGUI=OFF -DEXTERNAL_ARPACK=ON
+          echo "ok: the option that upstream CI already passes still works"
+
+      # The control for both of the above. Neither result means anything if a
+      # plain configure cannot succeed here.
+      - name: and a plain configure works
+        run: |
+          cmake -S . -B build-plain -G Ninja -DWITH_MPI=OFF -DWITH_ELMERGUI=OFF
+          echo "ok: configure succeeds with no ARPACK option at all"

@@ -70,6 +70,8 @@ jobs:
             ${{ matrix.mpi == 'with' && 'parmetis:p' || 'openblas:p' }}
             mumps:p
             suitesparse:p
+            arpack:p
+            ${{ matrix.mpi == 'with' && 'parpack:p' || 'openblas:p' }}
             qt6-declarative:p
             qwt-qt6:p
             vtk:p

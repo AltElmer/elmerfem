@@ -57,7 +57,7 @@ MACRO(RUN_ELMERICE_TEST)
   IF(WIN32)
     SET(ENV{PATH} "${BINARY_DIR}/elmerice/Solvers;${BINARY_DIR}/elmerice/Utils;${BINARY_DIR}/fem/src;$ENV{PATH}")
     GET_FILENAME_COMPONENT(COMPILER_DIRECTORY ${CMAKE_Fortran_COMPILER} PATH)
-    SET(ENV{PATH} "$ENV{ELMER_HOME};$ENV{ELMER_LIB};${BINARY_DIR}/fhutiter/src;${BINARY_DIR}/matc/src;${BINARY_DIR}/mathlibs/src/arpack;${BINARY_DIR}/mathlibs/src/parpack;${COMPILER_DIRECTORY};$ENV{PATH}")
+    SET(ENV{PATH} "$ENV{ELMER_HOME};$ENV{ELMER_LIB};${BINARY_DIR}/fhutiter/src;${BINARY_DIR}/matc/src;${COMPILER_DIRECTORY};$ENV{PATH}")
   ENDIF(WIN32)
 
   # Query number of physical CPU cores of the host

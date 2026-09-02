@@ -5,7 +5,7 @@ Compilation of Elmer under Ubuntu
 
 
  * Download the source code and create `build` directory as above
- * Install the dependencies `sudo apt install git cmake build-essential gfortran libopenmpi-dev libblas-dev liblapack-dev`
+ * Install the dependencies `sudo apt install git cmake build-essential gfortran libopenmpi-dev libblas-dev liblapack-dev libarpack2-dev libparpack2-dev`
  * Without MPI:
     ** `cmake .. -DWITH_OpenMP:BOOLEAN=TRUE`
  * With MPI:
@@ -30,11 +30,11 @@ Following, detailed and working instructions to compile and install on Ubuntu 24
 `cd elmerfem`
 
 * Install dependencies
-<br> `sudo apt install git cmake build-essential gfortran libopenmpi-dev libblas-dev liblapack-dev`
+<br> `sudo apt install git cmake build-essential gfortran libopenmpi-dev libblas-dev liblapack-dev libarpack2-dev libparpack2-dev`
 
 As an alternative
 * Install all dependencies for complete installation:
-<br> `sudo apt install git cmake build-essential gfortran libopenmpi-dev libblas-dev liblapack-dev qtscript5-dev libqt5svg5-dev libqwt-qt5-dev libnetcdf-dev libnetcdff-dev libmumps-dev libparmetis-dev`
+<br> `sudo apt install git cmake build-essential gfortran libopenmpi-dev libblas-dev liblapack-dev libarpack2-dev libparpack2-dev qtscript5-dev libqt5svg5-dev libqwt-qt5-dev libnetcdf-dev libnetcdff-dev libmumps-dev libparmetis-dev`
 
 * Create the build directory inside the repo "elmerfem" and cd into it
 <br> `mkdir build`

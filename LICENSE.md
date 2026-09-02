@@ -407,9 +407,13 @@ terms for the Open CASCADE library can be found from
 
 Additionally the source distribution comes with some libraries wrapped 
 up in autoconf/automake built scripts:
-* mathlibs - scalapack components: blas, lapack, arpack, parpack
 * umfpack - Umfpack version 4.4 (licensed under LGPL)
 * metis - graph partitioning contained within ElmerGrid
+
+BLAS, LAPACK, ARPACK and PARPACK used to be in this list, under `mathlibs`.
+They are no longer distributed with Elmer: it links whichever ones the
+platform provides. Their licenses are therefore the ones your packages carry,
+not ones reproduced here.
 
 
 #### Metis license:

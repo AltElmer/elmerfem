@@ -806,16 +806,44 @@ IF(NOT DEFINED UMFPACK_LONG_FORTRAN_TYPE)
 ENDIF()
 
 
-# Find external arpack and parpack
-IF(EXTERNAL_ARPACK)
-  MESSAGE(STATUS "Using external arpack library instead of built-in")
-  FIND_PACKAGE(ARPACK REQUIRED)
-  SET(CMAKE_REQUIRED_LIBRARIES
-    ${CMAKE_REQUIRED_LIBRARIES} ${ARPACK_LIBRARIES})
-ENDIF()
+# ARPACK and PARPACK come from the platform, like BLAS and LAPACK above.
+# mathlibs/ used to hold copies of all four. The BLAS and LAPACK copies could
+# not be reached: their guards were IF(NOT BLAS_FOUND) and IF(NOT
+# LAPACK_FOUND), and FIND_PACKAGE(BLAS REQUIRED) a few hundred lines earlier
+# either sets those or stops the configure, so a real configure of this tree
+# produced no build target under mathlibs/src/blas or mathlibs/src/lapack at
+# all. That was 1432 files of reference BLAS and LAPACK 3.0, a release from
+# June 1999, that no configuration could compile.
+#
+# The ARPACK copy was reachable, and was the default. It is ARPACK 96 from
+# Rice; the maintained line is ARPACK-NG, currently 3.9, which every platform
+# packages, including all five MSYS2 environments.
+# EXTERNAL_ARPACK and EXTERNAL_PARPACK used to select between the copy in the
+# tree and the platform's. There is no copy left to select, so OFF now stops
+# the configure rather than silently meaning ON. This runs before the
+# FIND_PACKAGE calls below: somebody who set the option and has no ARPACK
+# installed should be told what they actually asked for, not that ARPACK is
+# missing.
+FOREACH(opt ARPACK PARPACK)
+  IF(DEFINED EXTERNAL_${opt} AND NOT EXTERNAL_${opt})
+    MESSAGE(FATAL_ERROR
+      "EXTERNAL_${opt}=OFF asks for a copy of ${opt} inside Elmer, and there "
+      "is no longer one to build. Install it and configure without the "
+      "option:\n"
+      "  Debian/Ubuntu  apt install libarpack2-dev libparpack2-dev\n"
+      "  Fedora/RHEL    dnf install arpack-devel\n"
+      "  macOS          brew install arpack\n"
+      "  MSYS2          pacman -S \${MINGW_PACKAGE_PREFIX}-arpack\n"
+      "  vcpkg          vcpkg install arpack-ng\n"
+      "  conda          conda install -c conda-forge arpack")
+  ENDIF()
+ENDFOREACH()
 
-IF(MPI_FOUND AND EXTERNAL_PARPACK)
-  MESSAGE(STATUS "Using external parpack library instead of built-in")
+FIND_PACKAGE(ARPACK REQUIRED)
+SET(CMAKE_REQUIRED_LIBRARIES
+  ${CMAKE_REQUIRED_LIBRARIES} ${ARPACK_LIBRARIES})
+
+IF(MPI_FOUND)
   FIND_PACKAGE(PARPACK REQUIRED)
   SET(CMAKE_REQUIRED_LIBRARIES
     ${CMAKE_REQUIRED_LIBRARIES} ${PARPACK_LIBRARIES})
@@ -824,7 +852,6 @@ ENDIF()
 ADD_SUBDIRECTORY(fhutiter)
 ADD_SUBDIRECTORY(meshgen2d)
 ADD_SUBDIRECTORY(fem)
-ADD_SUBDIRECTORY(mathlibs)
 ADD_SUBDIRECTORY(elmergrid)
 ADD_SUBDIRECTORY(license_texts)
 
@@ -887,20 +914,17 @@ IF(CHOLMOD_FOUND AND SPQR_FOUND)
   MESSAGE(STATUS "------------------------------------------------")
   MARK_AS_ADVANCED(HAVE_CHOLMOD)
 ENDIF()
-IF(ARPACK_FOUND)
-  MESSAGE(STATUS " ARPACK library:  " "${ARPACK_LIBRARIES}")
-  MESSAGE(STATUS " ARPACK headers:  " "${ARPACK_INCLUDE_DIR}")
-ELSE()
-  MESSAGE(STATUS " ARPACK library: Using internal Elmer library")
-ENDIF()
-IF(PARPACK_FOUND)
+# FIND_PACKAGE(ARPACK REQUIRED) stops the configure when it is not found, so
+# there is no "carrying on with the internal copy" case left to report.
+MESSAGE(STATUS " ARPACK library:  " "${ARPACK_LIBRARIES}")
+MESSAGE(STATUS " ARPACK headers:  " "${ARPACK_INCLUDE_DIR}")
+IF(MPI_FOUND)
   MESSAGE(STATUS " PARPACK library: " "${PARPACK_LIBRARIES}")
   MESSAGE(STATUS " PARPACK headers: " "${PARPACK_INCLUDE_DIR}")
-  MESSAGE(STATUS "------------------------------------------------")
 ELSE()
-  MESSAGE(STATUS " PARPACK library: Using internal Elmer library")
-  MESSAGE(STATUS "------------------------------------------------")
+  MESSAGE(STATUS " PARPACK library: not needed, this is a serial build")
 ENDIF()
+MESSAGE(STATUS "------------------------------------------------")
 IF(WITH_Zoltan AND NOT USE_SYSTEM_ZOLTAN)
   MESSAGE(STATUS " Zoltan: building bundled code")
   MESSAGE(STATUS "------------------------------------------------")
