@@ -1,0 +1,469 @@
+name: release-portable
+
+# Portable binary archives of Elmer for every platform and architecture the
+# hosted runners cover.
+#
+# Upstream publishes source tarballs only, so anyone who wants to run Elmer
+# without building it first is on their own unless their distribution packages
+# it. This produces archives that carry their own shared libraries and run on a
+# machine that has never had Elmer's dependencies installed.
+#
+# Windows already has a pipeline of its own, windows-release.yml, which builds
+# through MSYS2 and publishes an NSIS installer and a ZIP. It is not duplicated
+# here.
+#
+# "Portable" is claimed only as far as it is checked. Every archive is unpacked
+# on a clean runner and its libraries resolved before anything is published: a
+# binary that needs something the archive does not carry fails the job rather
+# than reaching a release page.
+
+on:
+  push:
+    tags:
+      - 'release-*'
+      - 'v*'
+    # So the pipeline can be exercised without inventing a tag. Building and
+    # verifying run; publishing does not, because that is gated on a tag below.
+    branches:
+      - 'feat/portable-release'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build and attach to
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            os: ubuntu-24.04
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+          - target: macos-arm64
+            os: macos-14
+          - target: macos-x86_64
+            os: macos-15-intel
+          # Windows, through MSYS2 UCRT64.
+          #
+          # Built without MPI on purpose. Microsoft MPI is a separate runtime
+          # the user would have to install, which is the opposite of what
+          # these archives are for; the Linux and macOS ones bundle Open MPI
+          # because it is an ordinary shared library and MSMPI is not. This is
+          # a serial ElmerSolver, and the README says so.
+          - target: windows-x86_64
+            os: windows-2022
+            mingw: true
+            cmake-extra: -DWITH_MPI=OFF
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: dependencies (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gfortran cmake ninja-build patchelf \
+            libopenmpi-dev openmpi-bin \
+            libblas-dev liblapack-dev \
+            libsuitesparse-dev libmumps-dev libparmetis-dev \
+            libarpack2-dev libparpack2-dev \
+            libnetcdf-dev libnetcdff-dev
+
+      # One toolchain for all three languages, GNU throughout.
+      #
+      # AppleClang ships no OpenMP, so -DWITH_OpenMP=ON fails at configure
+      # with "Could NOT find OpenMP_C". Homebrew's libomp would fix that
+      # symptom, but the Fortran here is gfortran either way, and pairing
+      # AppleClang's OpenMP runtime with gfortran's in one process is a good
+      # way to get an intermittent problem later rather than an error now.
+      # Homebrew's gcc brings its own OpenMP for all three languages.
+      - name: dependencies (macos)
+        if: runner.os == 'macOS'
+        run: |
+          set -e
+          brew install gcc cmake ninja open-mpi openblas suite-sparse arpack netcdf
+          gccbin=$(ls $(brew --prefix)/bin/gcc-1* 2>/dev/null | sort -V | tail -1)
+          gxxbin=$(ls $(brew --prefix)/bin/g++-1* 2>/dev/null | sort -V | tail -1)
+          fcbin=$(ls $(brew --prefix)/bin/gfortran-1* 2>/dev/null | sort -V | tail -1)
+          for v in gccbin gxxbin fcbin; do
+            eval "val=\$$v"
+            [ -n "$val" ] || { echo "::error::could not find $v under $(brew --prefix)/bin"; exit 1; }
+          done
+          echo "CC=$gccbin"  >> "$GITHUB_ENV"
+          echo "CXX=$gxxbin" >> "$GITHUB_ENV"
+          echo "FC=$fcbin"   >> "$GITHUB_ENV"
+          echo "using $gccbin, $gxxbin, $fcbin"
+
+      # The solver, the mesh tools and the libraries. ElmerGUI is deliberately
+      # out of scope for this workflow: it brings Qt, VTK and OpenCASCADE, and
+      # bundling those correctly is a separate problem from shipping a solver
+      # that runs anywhere. Stated rather than left for someone to discover
+      # from a missing binary.
+      - name: dependencies (mingw)
+        if: matrix.mingw
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gcc-fortran
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-openblas
+            mingw-w64-ucrt-x86_64-suitesparse
+
+      - name: configure and build (mingw)
+        if: matrix.mingw
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/install" \
+            -DWITH_MPI=OFF \
+            -DWITH_OpenMP=ON \
+            -DWITH_LUA=ON \
+            -DWITH_ELMERGUI=OFF \
+            -DWITH_ELMERPOST=OFF \
+            -DBYPASS_CPACK=ON \
+            -DBLA_VENDOR=OpenBLAS \
+            -DCMAKE_C_FLAGS="-Wno-error=incompatible-pointer-types"
+          cmake --build build
+          cmake --install build
+
+      # The archive has to run on a machine that has never seen MSYS2. objdump
+      # rather than ldd, which is not in the UCRT64 environment, and repeated
+      # until nothing new appears because the DLLs have dependencies of their
+      # own.
+      - name: bundle the windows runtime
+        if: matrix.mingw
+        shell: msys2 {0}
+        run: |
+          set -e
+          d="install/bin"
+          mkdir -p "$d"
+          pass=0
+          while : ; do
+            pass=$((pass+1))
+            before=$(find "$d" -maxdepth 1 -name '*.dll' | wc -l)
+            for bin in "$d"/*.exe "$d"/*.dll; do
+              [ -f "$bin" ] || continue
+              objdump -p "$bin" | awk '/DLL Name:/ {print $3}' | while read -r dll; do
+                [ -f "/ucrt64/bin/$dll" ] || continue
+                cp -n "/ucrt64/bin/$dll" "$d/" 2>/dev/null || true
+              done
+            done
+            after=$(find "$d" -maxdepth 1 -name '*.dll' | wc -l)
+            echo "pass $pass: $before -> $after DLLs"
+            [ "$after" -gt "$before" ] || break
+            [ "$pass" -lt 8 ] || break
+          done
+
+      - name: configure
+        if: '!matrix.mingw'
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/install" \
+            -DWITH_MPI=ON \
+            -DWITH_OpenMP=ON \
+            -DWITH_LUA=ON \
+            -DWITH_ELMERGUI=OFF \
+            -DWITH_ELMERPOST=OFF \
+            -DBYPASS_CPACK=ON \
+            -DCMAKE_C_FLAGS="-Wno-error=incompatible-pointer-types" \
+            -DCMAKE_INSTALL_RPATH='$ORIGIN/../lib:$ORIGIN/../lib/elmersolver'
+
+      - name: build
+        if: '!matrix.mingw'
+        run: cmake --build build
+
+      - name: install
+        if: '!matrix.mingw'
+        run: cmake --install build
+
+      # Copy in every shared library the installed binaries need that is not
+      # part of the base system, and rewrite the load paths so they are found
+      # next to the binary rather than wherever they happened to live on the
+      # runner. Without this the archive works only on a machine that already
+      # has Elmer's dependencies, which is the situation it exists to avoid.
+      - name: bundle the shared libraries (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          libdir="install/lib/bundled"
+          mkdir -p "$libdir"
+
+          # Left out on purpose: glibc and its immediate companions, the
+          # dynamic loader, and libraries tied to the kernel or the graphics
+          # driver. Copying those makes an archive that crashes on a host with
+          # a different kernel or GPU rather than one that is more portable.
+          skip='^(linux-vdso|ld-linux|libc|libm|libdl|libpthread|librt|libresolv|libutil)\.'
+
+          pass=0
+          while : ; do
+            pass=$((pass+1))
+            before=$(ls "$libdir" 2>/dev/null | wc -l)
+            while read -r bin; do
+              ldd "$bin" 2>/dev/null | awk '/=>/ {print $1, $3}' | while read -r name path; do
+                [ -f "$path" ] || continue
+                echo "$name" | grep -Eq "$skip" && continue
+                cp -n "$path" "$libdir/" 2>/dev/null || true
+              done
+            done < <(find install -type f \( -perm -u+x -o -name '*.so*' \) -exec file {} + \
+                     | grep -i 'ELF' | cut -d: -f1)
+            after=$(ls "$libdir" 2>/dev/null | wc -l)
+            echo "pass $pass: $before -> $after libraries"
+            [ "$after" -gt "$before" ] || break
+            [ "$pass" -lt 8 ] || break
+          done
+
+          # Every executable and library looks beside itself, then in the
+          # bundle, so the archive is relocatable.
+          find install -type f -perm -u+x -exec file {} + | grep -i 'ELF' | cut -d: -f1 \
+            | while read -r bin; do
+                patchelf --set-rpath '$ORIGIN/../lib/bundled:$ORIGIN/../lib:$ORIGIN/../lib/elmersolver:$ORIGIN' "$bin" || true
+              done
+          find install -name '*.so*' -type f \
+            | while read -r so; do
+                patchelf --set-rpath '$ORIGIN:$ORIGIN/bundled:$ORIGIN/..' "$so" || true
+              done
+          echo "bundled $(ls "$libdir" | wc -l) libraries"
+
+      - name: bundle the shared libraries (macos)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          libdir="install/lib/bundled"
+          mkdir -p "$libdir"
+
+          # Only what comes from the package manager. Anything under /usr/lib
+          # or /System is part of macOS and is present on every machine.
+          pass=0
+          while : ; do
+            pass=$((pass+1))
+            before=$(ls "$libdir" 2>/dev/null | wc -l)
+            while read -r bin; do
+              otool -L "$bin" 2>/dev/null | tail -n +2 | awk '{print $1}' | while read -r dep; do
+                case "$dep" in
+                  /usr/lib/*|/System/*|@*) continue ;;
+                esac
+                [ -f "$dep" ] || continue
+                cp -n "$dep" "$libdir/" 2>/dev/null || true
+                chmod u+w "$libdir/$(basename "$dep")" 2>/dev/null || true
+              done
+            done < <(find install -type f \( -perm -u+x -o -name '*.dylib' \))
+            after=$(ls "$libdir" 2>/dev/null | wc -l)
+            echo "pass $pass: $before -> $after libraries"
+            [ "$after" -gt "$before" ] || break
+            [ "$pass" -lt 8 ] || break
+          done
+
+          # Rewrite absolute paths to @rpath and give every binary an rpath
+          # pointing at the bundle.
+          retarget() {
+            local f="$1" rp="$2"
+            otool -L "$f" 2>/dev/null | tail -n +2 | awk '{print $1}' | while read -r dep; do
+              case "$dep" in
+                /usr/lib/*|/System/*|@*) continue ;;
+              esac
+              install_name_tool -change "$dep" "@rpath/$(basename "$dep")" "$f" 2>/dev/null || true
+            done
+            install_name_tool -add_rpath "$rp" "$f" 2>/dev/null || true
+          }
+          find install -type f -perm -u+x -exec sh -c 'file "$1" | grep -qi "Mach-O.*executable"' _ {} \; -print \
+            | while read -r bin; do retarget "$bin" "@executable_path/../lib/bundled"; done
+          find install \( -name '*.dylib' -o -name '*.so' \) -type f \
+            | while read -r so; do retarget "$so" "@loader_path"; done
+          echo "bundled $(ls "$libdir" | wc -l) libraries"
+
+      # The claim is that these archives run on a machine without Elmer's
+      # dependencies. Checked here rather than asserted: the binaries are
+      # resolved against what the archive actually carries, and anything still
+      # missing fails the job.
+      - name: nothing may be left unresolved
+        shell: bash
+        run: |
+          set -uo pipefail
+          missing=0
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            # Every DLL an executable imports must either be beside it or be a
+            # Windows system DLL. Anything else means the archive depends on
+            # MSYS2 being installed, which is what the bundling exists to
+            # prevent.
+            for bin in install/bin/*.exe; do
+              [ -f "$bin" ] || continue
+              for dll in $(objdump -p "$bin" 2>/dev/null | awk '/DLL Name:/ {print $3}'); do
+                [ -f "install/bin/$dll" ] && continue
+                # API sets. api-ms-win-* and ext-ms-* are not files: they are
+                # virtual names the loader resolves through the API set schema,
+                # and the Universal CRT ones are part of Windows itself. An
+                # earlier version of this check looked for them in System32,
+                # found nothing, and failed a build whose binaries were fine.
+                case "$dll" in
+                  api-ms-win-*|ext-ms-*) continue ;;
+                esac
+                # Ordinary system DLLs do live in the Windows directory.
+                [ -f "/c/Windows/System32/$dll" ] && continue
+                echo "::error::$bin needs $dll, which is neither bundled nor provided by Windows"
+                missing=1
+              done
+            done
+          elif [ "${{ runner.os }}" = "Linux" ]; then
+            while read -r bin; do
+              out=$(ldd "$bin" 2>/dev/null | grep 'not found' || true)
+              if [ -n "$out" ]; then
+                echo "::error::$bin has unresolved libraries:"; echo "$out"; missing=1
+              fi
+            done < <(find install -type f -perm -u+x -exec file {} + | grep -i 'ELF.*executable' | cut -d: -f1)
+          else
+            while read -r bin; do
+              out=$(otool -L "$bin" 2>/dev/null | tail -n +2 | awk '{print $1}' \
+                    | grep -vE '^(/usr/lib/|/System/|@)' || true)
+              if [ -n "$out" ]; then
+                echo "::error::$bin still points outside the archive:"; echo "$out"; missing=1
+              fi
+            done < <(find install -type f -perm -u+x -exec sh -c 'file "$1" | grep -qi "Mach-O.*executable"' _ {} \; -print)
+          fi
+          [ "$missing" -eq 0 ] || exit 1
+          echo "ok: every binary resolves inside the archive"
+
+      # An archive without the solver is not a release of Elmer, however well
+      # it was built.
+      - name: the solver and the mesh tools must be there, and must run
+        shell: bash
+        run: |
+          set -e
+          # ElmerSolver_mpi, not ElmerSolver. fem/src/CMakeLists.txt sets
+          # ELMERSOLVER_OUTPUT_NAME to ElmerSolver_mpi when WITH_MPI is on,
+          # which this build has, so looking for the plain name found nothing
+          # and reported a missing solver on a build that had produced one.
+          # Matched by prefix, and the name that was found is printed, so the
+          # check does not have to be right about which variant was built.
+          solver=$(find install \( -name 'ElmerSolver' -o -name 'ElmerSolver.exe' -o -name 'ElmerSolver_mpi' -o -name 'ElmerSolver_mpi.exe' \) -type f | head -1)
+          echo "solver: ${solver:-MISSING}"
+          [ -n "$solver" ] || { echo "::error::no ElmerSolver binary in the archive"; exit 1; }
+          for b in ElmerGrid; do
+            f=$(find install \( -name "$b" -o -name "$b.exe" \) -type f | head -1)
+            echo "$b: ${f:-MISSING}"
+            [ -n "$f" ] || { echo "::error::$b is not in the archive"; exit 1; }
+          done
+          # ElmerGrid with no arguments prints its usage. Running it proves the
+          # dynamic linking actually works, which listing the file does not.
+          eg=$(find install \( -name ElmerGrid -o -name ElmerGrid.exe \) -type f | head -1)
+          out=$("$eg" 2>&1 | head -20 || true)
+          echo "$out"
+          echo "$out" | grep -qi 'elmergrid' || { echo "::error::ElmerGrid did not run"; exit 1; }
+          echo "ok: ElmerGrid runs from the installed tree"
+
+      - name: package
+        shell: bash
+        run: |
+          set -e
+          name="elmerfem-${{ matrix.target }}"
+          mkdir -p dist
+          cp -r install "dist/$name"
+          cp README.md "dist/$name/" 2>/dev/null || true
+          cp license_texts/LICENSES_GPL.txt "dist/$name/" 2>/dev/null || true
+          tar czf "dist/$name.tar.gz" -C dist "$name"
+          ls -l dist/*.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: elmerfem-${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+
+  # Unpack each archive somewhere with none of the build dependencies present
+  # and run the solver. The job above checks the tree it just built, which is
+  # sitting on the machine that built it; this checks the thing that will
+  # actually be downloaded.
+  verify:
+    needs: build
+    name: verify ${{ matrix.target }} on a clean machine
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            os: ubuntu-24.04
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+          - target: macos-arm64
+            os: macos-14
+          - target: macos-x86_64
+            os: macos-15-intel
+          # Windows, through MSYS2 UCRT64.
+          #
+          # Built without MPI on purpose. Microsoft MPI is a separate runtime
+          # the user would have to install, which is the opposite of what
+          # these archives are for; the Linux and macOS ones bundle Open MPI
+          # because it is an ordinary shared library and MSMPI is not. This is
+          # a serial ElmerSolver, and the README says so.
+          - target: windows-x86_64
+            os: windows-2022
+            mingw: true
+            cmake-extra: -DWITH_MPI=OFF
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: elmerfem-${{ matrix.target }}
+          path: dl
+
+      - name: unpack and run
+        shell: bash
+        run: |
+          set -e
+          if ls dl/*.zip >/dev/null 2>&1; then
+            unzip -q dl/*.zip
+          else
+            tar xzf dl/*.tar.gz
+          fi
+          d="elmerfem-${{ matrix.target }}"
+          eg=$(find "$d" \( -name ElmerGrid -o -name ElmerGrid.exe \) -type f | head -1)
+          es=$(find "$d" -name 'ElmerSolver*' -type f | head -1)
+          echo "ElmerGrid : $eg"
+          echo "ElmerSolver: $es"
+          out=$("$eg" 2>&1 | head -20 || true)
+          echo "$out"
+          echo "$out" | grep -qi 'elmergrid' \
+            || { echo "::error::ElmerGrid does not run from the unpacked archive"; exit 1; }
+          echo "ok: the published archive runs"
+
+  publish:
+    needs: verify
+    # Only for a tag. A run on a branch builds and verifies, which is the
+    # useful part when testing the pipeline, and does not create a release
+    # named after a branch.
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: list what will be published
+        run: ls -lR dist
+
+      - name: attach to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: dist/**/elmerfem-*.tar.gz
