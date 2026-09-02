@@ -777,6 +777,13 @@ ADD_SUBDIRECTORY(matc)
 # CMake rules around it. SuiteSparse itself has meanwhile reached UMFPACK 6.3,
 # so the bundled copy was twenty years of fixes behind and the only way to get
 # those fixes was to configure with -DEXTERNAL_UMFPACK=ON, which few did.
+#
+# One thing this brings with it: SuiteSparse's own CMake package config calls
+# find_dependency(OpenMP), so FIND_PACKAGE(UMFPACK) below needs an OpenMP the C
+# compiler can use, whatever WITH_OpenMP is set to. GCC has libgomp already and
+# notices nothing. Clang and Apple Clang ship no OpenMP runtime, so those need
+# libomp installed; on macOS that is what Elmer's own build-macos-homebrew
+# workflow already does for the same reason.
 IF (WITH_UMFPACK)
   IF (DEFINED EXTERNAL_UMFPACK AND NOT EXTERNAL_UMFPACK)
     MESSAGE(FATAL_ERROR

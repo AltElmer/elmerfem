@@ -65,16 +65,27 @@ jobs:
           sudo apt-get install -y \
             gfortran cmake ninja-build \
             libsuitesparse-dev libopenblas-dev liblapack-dev
-          if [ "${{ matrix.clang }}" = "true" ]; then sudo apt-get install -y clang; fi
+          # SuiteSparse's own CMake config does find_dependency(OpenMP), so
+          # FIND_PACKAGE(UMFPACK) needs an OpenMP the C compiler can use even
+          # though Elmer is configured with WITH_OpenMP off. GCC has libgomp
+          # already; clang needs libomp.
+          if [ "${{ matrix.clang }}" = "true" ]; then sudo apt-get install -y clang libomp-dev; fi
 
+      # libomp for the same reason as clang on Linux: SuiteSparse's CMake
+      # config requires OpenMP, and Apple Clang ships no OpenMP runtime. The
+      # explicit OpenMP_*_FLAGS below are the incantation Elmer's own
+      # build-macos-homebrew workflow already uses, since plain detection does
+      # not work for Apple Clang.
       - name: dependencies (macos)
         if: matrix.brew
         run: |
           set -e
-          brew install gcc cmake ninja suite-sparse openblas
+          brew install gcc cmake ninja suite-sparse openblas libomp
           fc=$( { ls $(brew --prefix)/bin/gfortran-1* 2>/dev/null || true; } | sort -V | tail -1 || true )
           [ -n "$fc" ] || { echo "::error::no gfortran under $(brew --prefix)/bin"; exit 1; }
           echo "FC=$fc" >> "$GITHUB_ENV"
+          echo "HOMEBREW_PREFIX=$(brew --prefix)" >> "$GITHUB_ENV"
+          echo "LDFLAGS=-L$(brew --prefix)/opt/libomp/lib -lomp" >> "$GITHUB_ENV"
 
       - name: dependencies (mingw)
         if: matrix.mingw
@@ -128,10 +139,19 @@ jobs:
         shell: bash
         run: |
           set -e
+          # An array, not a string: the OpenMP flags contain spaces, and an
+          # unquoted expansion would split "-Xclang -fopenmp -I..." into three
+          # separate cmake arguments.
+          args=()
+          if [ -n "${HOMEBREW_PREFIX:-}" ]; then
+            args+=("-DCMAKE_PREFIX_PATH=${HOMEBREW_PREFIX}/opt/libomp;${HOMEBREW_PREFIX}/opt/openblas")
+            args+=("-DOpenMP_C_FLAGS=-Xclang -fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include")
+            args+=("-DOpenMP_CXX_FLAGS=-Xclang -fopenmp -I${HOMEBREW_PREFIX}/opt/libomp/include")
+          fi
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DWITH_ELMERGUI=OFF -DWITH_MPI=OFF -DWITH_ELMERPOST=OFF \
-            -DWITH_UMFPACK=ON ${{ matrix.cmake-extra }} 2>&1 | tee configure.log
+            -DWITH_UMFPACK=ON ${{ matrix.cmake-extra }} "${args[@]}" 2>&1 | tee configure.log
           cmake --build build -j 4
 
       - name: configure and build (mingw)
