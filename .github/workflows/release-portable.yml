@@ -307,9 +307,17 @@ jobs:
               [ -f "$bin" ] || continue
               for dll in $(objdump -p "$bin" 2>/dev/null | awk '/DLL Name:/ {print $3}'); do
                 [ -f "install/bin/$dll" ] && continue
-                # System DLLs live in the Windows directory and are always present.
+                # API sets. api-ms-win-* and ext-ms-* are not files: they are
+                # virtual names the loader resolves through the API set schema,
+                # and the Universal CRT ones are part of Windows itself. An
+                # earlier version of this check looked for them in System32,
+                # found nothing, and failed a build whose binaries were fine.
+                case "$dll" in
+                  api-ms-win-*|ext-ms-*) continue ;;
+                esac
+                # Ordinary system DLLs do live in the Windows directory.
                 [ -f "/c/Windows/System32/$dll" ] && continue
-                echo "::error::$bin needs $dll, which is neither bundled nor a system DLL"
+                echo "::error::$bin needs $dll, which is neither bundled nor provided by Windows"
                 missing=1
               done
             done
