@@ -1,0 +1,188 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64 (gcc)
+            os: ubuntu-24.04
+            run-gui: true
+          - name: linux-arm64 (gcc)
+            os: ubuntu-24.04-arm
+            run-gui: true
+          - name: linux-x86_64 (clang)
+            os: ubuntu-24.04
+            apt-clang: true
+            cmake-extra: -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          - name: linux-x86_64 (intel icx)
+            os: ubuntu-24.04
+            intel: true
+            cmake-extra: -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx -DCMAKE_Fortran_COMPILER=ifx
+          - name: windows-x86_64 (mingw)
+            os: windows-2022
+            mingw: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: dependencies (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gfortran \
+            libgl1-mesa-dev libglu1-mesa-dev \
+            tcl-dev tk-dev \
+            libx11-dev libxext-dev libxi-dev libxmu-dev \
+            xvfb mesa-utils
+
+      - name: clang (linux)
+        if: matrix.apt-clang
+        run: sudo apt-get install -y clang
+
+      # Intel's compilers, because the brief covers proprietary toolchains too
+      # and not only the free ones. ElmerPost needs a Fortran compiler as well:
+      # sico2elmer is Fortran.
+      - name: intel oneapi
+        if: matrix.intel
+        run: |
+          wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+            | gpg --dearmor | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+            | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo apt-get install -y intel-oneapi-compiler-dpcpp-cpp intel-oneapi-compiler-fortran
+          echo "/opt/intel/oneapi/compiler/latest/bin" >> "$GITHUB_PATH"
+
+      - name: dependencies (mingw)
+        if: matrix.mingw
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gcc-fortran
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-tcl
+            mingw-w64-ucrt-x86_64-tk
+
+      - name: build
+        if: '!matrix.mingw'
+        shell: bash
+        run: |
+          if [ -f /opt/intel/oneapi/setvars.sh ]; then
+            set +u; . /opt/intel/oneapi/setvars.sh; set -u
+          fi
+          echo "cmake: $(cmake --version | head -1)"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake-extra }}
+          cmake --build build
+
+      - name: build (mingw)
+        if: matrix.mingw
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: the binaries must exist
+        shell: bash
+        run: |
+          set -e
+          for b in ElmerPost sico2elmer; do
+            f=$(find build -name "$b" -type f -o -name "$b.exe" -type f | head -1)
+            echo "$b: ${f:-MISSING}"
+            [ -n "$f" ] || { echo "::error::$b was not built"; exit 1; }
+          done
+
+      # MATC is a submodule rather than a copy. Assert that, because a stale
+      # vendored copy is exactly the problem this replaces: the one that was
+      # here missed twelve years of maintenance and failed to compile under any
+      # compiler defaulting to C23.
+      - name: matc must come from the submodule
+        shell: bash
+        run: |
+          set -e
+          test -f matc/.git || test -d matc/.git || { echo "::error::matc is not a submodule checkout"; exit 1; }
+          grep -q 'AltElmer/matc' .gitmodules || { echo "::error::.gitmodules does not point at AltElmer/matc"; exit 1; }
+          # Files that exist in only one of the two trees, so this tells the
+          # maintained checkout from the old vendored copy without depending on
+          # a string that may or may not be in the sources. An earlier version
+          # of this step grepped for MATC_OPENMP in matc/src/*.c, which is not
+          # there in either copy: it lives in src/CMakeLists.txt. That check
+          # could only ever fail.
+          test -f matc/LGPL-2.1 || { echo "::error::matc/LGPL-2.1 missing; not the maintained checkout"; exit 1; }
+          test ! -f matc/matc.pro || { echo "::error::matc/matc.pro present; this is the old vendored copy"; exit 1; }
+          echo "ok: matc is the AltElmer/matc submodule, not the vendored copy"
+
+  # Does ElmerPost actually open its window?
+  #
+  # It builds and starts on Windows but its GLAUX window creation fails there
+  # with ERROR_INVALID_HANDLE, in upstream's own build as much as in this one.
+  # Linux is the platform whose GLX path was the one in use, so this job is
+  # what decides whether that is a Windows-only problem or a general one.
+  # Running under Xvfb with software GL, since the runners have no display and
+  # no GPU.
+  window:
+    name: does it open a window (xvfb)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gfortran libgl1-mesa-dev libglu1-mesa-dev tcl-dev tk-dev \
+            libx11-dev libxext-dev libxi-dev libxmu-dev \
+            xvfb x11-utils mesa-utils
+
+      - name: build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: start it under Xvfb and look for its window
+        run: |
+          set -x
+          export ELMER_POST_HOME="$PWD/build/share/elmerpost"
+          exe=$(find build -name ElmerPost -type f | head -1)
+          xvfb-run -a --server-args="-screen 0 1024x768x24" bash -c '
+            '"$exe"' > out.log 2> err.log &
+            pid=$!
+            sleep 25
+            echo "--- windows on the display ---"
+            xwininfo -root -tree || true
+            kill $pid 2>/dev/null || true
+          ' || true
+          echo "=== stdout ==="; cat out.log || true
+          echo "=== stderr ==="; cat err.log || true
+
+      # Reported rather than enforced. The point of this job is to find out
+      # what happens on X11, and a job that fails the build would say less
+      # than one that prints what it saw.
+      - name: report
+        run: |
+          if grep -qi 'create window failed' err.log out.log 2>/dev/null; then
+            echo "::warning::ElmerPost could not create its window under Xvfb either"
+          else
+            echo "no window creation failure reported"
+          fi

@@ -1,0 +1,63 @@
+name: pages
+
+# Publishes doc/ to GitHub Pages.
+#
+# This is ElmerPost's own help, the pages the program serves through its Help
+# menu. It has been in the sources since the 1990s and could only be read by
+# running the program or opening local files.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'doc/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # A project Pages site is served from a subpath, so a link to "/index.html"
+      # leaves the project entirely and lands on the organisation root. There
+      # was one, in doc/matc/kirja.html, pointing at the help index one level
+      # above it. Checked rather than trusted, because it is the kind of thing
+      # that comes back with the next documentation import.
+      - name: no absolute links may escape the site
+        run: |
+          if grep -rniE '(href|src)="/' doc --include='*.html'; then
+            echo "::error::absolute link in doc/, it would escape the project Pages path"
+            exit 1
+          fi
+          echo "ok: no absolute links"
+
+      - name: the entry point must exist
+        run: |
+          test -f doc/index.html || { echo "::error::doc/index.html is missing"; exit 1; }
+          echo "ok: index.html present"
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: doc
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

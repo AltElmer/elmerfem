@@ -1,0 +1,151 @@
+name: release
+
+# Builds ElmerPost for each supported platform and attaches the archives to the
+# release for the tag that triggered it.
+#
+# There is no single artifact that runs everywhere: this is native code linked
+# against OpenGL and Tcl/Tk, so there is one archive per operating system and
+# CPU architecture. Each carries the program, sico2elmer, and the data and Tcl
+# scripts ElmerPost reads at run time, because without those it starts and can
+# then do nothing.
+#
+# macOS is absent. ElmerPost's non-Windows path is an X11 program and macOS
+# has no X11; see the README.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build and attach to
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            os: ubuntu-24.04
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+          - target: windows-x86_64
+            os: windows-2022
+            mingw: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: dependencies (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gfortran libgl1-mesa-dev libglu1-mesa-dev tcl-dev tk-dev \
+            libx11-dev libxext-dev libxi-dev libxmu-dev
+
+      - name: dependencies (mingw)
+        if: matrix.mingw
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gcc-fortran
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-tcl
+            mingw-w64-ucrt-x86_64-tk
+
+      - name: build
+        if: '!matrix.mingw'
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=dist/elmerpost-${{ matrix.target }}
+          cmake --build build
+          cmake --install build
+
+      - name: build (mingw)
+        if: matrix.mingw
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=dist/elmerpost-${{ matrix.target }}
+          cmake --build build
+          cmake --install build
+
+      # The archive has to run on a machine that has never seen MSYS2. CMake
+      # already installs the Tcl and Tk trees on this platform; what is left is
+      # the compiler runtime and anything else the binaries pull from
+      # /ucrt64/bin. Resolved with ldd rather than listed by hand, so a
+      # dependency added later is picked up instead of missed.
+      - name: bundle the windows runtime
+        if: matrix.mingw
+        shell: msys2 {0}
+        run: |
+          set -e
+          d="dist/elmerpost-${{ matrix.target }}/bin"
+          for exe in "$d"/ElmerPost.exe "$d"/sico2elmer.exe; do
+            [ -f "$exe" ] || continue
+            ldd "$exe" | awk '{print $3}' | grep -i '^/ucrt64/bin/' | while read -r dll; do
+              cp -n "$dll" "$d/" || true
+            done
+          done
+          echo "bundled DLLs:"; ls "$d"/*.dll 2>/dev/null | wc -l
+
+      - name: package
+        shell: bash
+        run: |
+          set -e
+          d="dist/elmerpost-${{ matrix.target }}"
+          cp README.md "$d/" 2>/dev/null || true
+          cp tcl_license.terms tk_license.terms "$d/" 2>/dev/null || true
+
+          # An archive without the program, or without the scripts it loads at
+          # startup, is worse than a failed build because it looks like a
+          # release. Checked before anything is uploaded.
+          exe=$(find "$d" -name 'ElmerPost' -type f -o -name 'ElmerPost.exe' -type f | head -1)
+          [ -n "$exe" ] || { echo "::error::no ElmerPost binary in the archive"; exit 1; }
+          find "$d" -name 'init.tcl' | grep -q . \
+            || { echo "::error::no tcl scripts in the archive; ElmerPost would start and do nothing"; exit 1; }
+          echo "binary: $exe"
+          ls -lR "$d" | head -40
+
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "elmerpost-${{ matrix.target }}.zip" "elmerpost-${{ matrix.target }}"
+          else
+            tar czf "elmerpost-${{ matrix.target }}.tar.gz" "elmerpost-${{ matrix.target }}"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: elmerpost-${{ matrix.target }}
+          path: dist/elmerpost-*.*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: list what will be published
+        run: ls -lR dist
+
+      - name: attach to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: dist/**/elmerpost-*.*
