@@ -51,7 +51,17 @@ jobs:
             os: macos-14
           - target: macos-x86_64
             os: macos-15-intel
-
+          # Windows, through MSYS2 UCRT64.
+          #
+          # Built without MPI on purpose. Microsoft MPI is a separate runtime
+          # the user would have to install, which is the opposite of what
+          # these archives are for; the Linux and macOS ones bundle Open MPI
+          # because it is an ordinary shared library and MSMPI is not. This is
+          # a serial ElmerSolver, and the README says so.
+          - target: windows-x86_64
+            os: windows-2022
+            mingw: true
+            cmake-extra: -DWITH_MPI=OFF
     steps:
       - uses: actions/checkout@v4
         with:
@@ -99,7 +109,67 @@ jobs:
       # bundling those correctly is a separate problem from shipping a solver
       # that runs anywhere. Stated rather than left for someone to discover
       # from a missing binary.
+      - name: dependencies (mingw)
+        if: matrix.mingw
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gcc-fortran
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-openblas
+            mingw-w64-ucrt-x86_64-suitesparse
+
+      - name: configure and build (mingw)
+        if: matrix.mingw
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/install" \
+            -DWITH_MPI=OFF \
+            -DWITH_OpenMP=ON \
+            -DWITH_LUA=ON \
+            -DWITH_ELMERGUI=OFF \
+            -DWITH_ELMERPOST=OFF \
+            -DBYPASS_CPACK=ON \
+            -DBLA_VENDOR=OpenBLAS \
+            -DCMAKE_C_FLAGS="-Wno-error=incompatible-pointer-types"
+          cmake --build build
+          cmake --install build
+
+      # The archive has to run on a machine that has never seen MSYS2. objdump
+      # rather than ldd, which is not in the UCRT64 environment, and repeated
+      # until nothing new appears because the DLLs have dependencies of their
+      # own.
+      - name: bundle the windows runtime
+        if: matrix.mingw
+        shell: msys2 {0}
+        run: |
+          set -e
+          d="install/bin"
+          mkdir -p "$d"
+          pass=0
+          while : ; do
+            pass=$((pass+1))
+            before=$(find "$d" -maxdepth 1 -name '*.dll' | wc -l)
+            for bin in "$d"/*.exe "$d"/*.dll; do
+              [ -f "$bin" ] || continue
+              objdump -p "$bin" | awk '/DLL Name:/ {print $3}' | while read -r dll; do
+                [ -f "/ucrt64/bin/$dll" ] || continue
+                cp -n "/ucrt64/bin/$dll" "$d/" 2>/dev/null || true
+              done
+            done
+            after=$(find "$d" -maxdepth 1 -name '*.dll' | wc -l)
+            echo "pass $pass: $before -> $after DLLs"
+            [ "$after" -gt "$before" ] || break
+            [ "$pass" -lt 8 ] || break
+          done
+
       - name: configure
+        if: '!matrix.mingw'
         shell: bash
         run: |
           cmake -S . -B build -G Ninja \
@@ -115,9 +185,11 @@ jobs:
             -DCMAKE_INSTALL_RPATH='$ORIGIN/../lib:$ORIGIN/../lib/elmersolver'
 
       - name: build
+        if: '!matrix.mingw'
         run: cmake --build build
 
       - name: install
+        if: '!matrix.mingw'
         run: cmake --install build
 
       # Copy in every shared library the installed binaries need that is not
@@ -226,7 +298,22 @@ jobs:
         run: |
           set -uo pipefail
           missing=0
-          if [ "${{ runner.os }}" = "Linux" ]; then
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            # Every DLL an executable imports must either be beside it or be a
+            # Windows system DLL. Anything else means the archive depends on
+            # MSYS2 being installed, which is what the bundling exists to
+            # prevent.
+            for bin in install/bin/*.exe; do
+              [ -f "$bin" ] || continue
+              for dll in $(objdump -p "$bin" 2>/dev/null | awk '/DLL Name:/ {print $3}'); do
+                [ -f "install/bin/$dll" ] && continue
+                # System DLLs live in the Windows directory and are always present.
+                [ -f "/c/Windows/System32/$dll" ] && continue
+                echo "::error::$bin needs $dll, which is neither bundled nor a system DLL"
+                missing=1
+              done
+            done
+          elif [ "${{ runner.os }}" = "Linux" ]; then
             while read -r bin; do
               out=$(ldd "$bin" 2>/dev/null | grep 'not found' || true)
               if [ -n "$out" ]; then
@@ -257,17 +344,17 @@ jobs:
           # and reported a missing solver on a build that had produced one.
           # Matched by prefix, and the name that was found is printed, so the
           # check does not have to be right about which variant was built.
-          solver=$(find install -name 'ElmerSolver*' -type f -perm -u+x | head -1)
+          solver=$(find install \( -name 'ElmerSolver' -o -name 'ElmerSolver.exe' -o -name 'ElmerSolver_mpi' -o -name 'ElmerSolver_mpi.exe' \) -type f | head -1)
           echo "solver: ${solver:-MISSING}"
           [ -n "$solver" ] || { echo "::error::no ElmerSolver binary in the archive"; exit 1; }
           for b in ElmerGrid; do
-            f=$(find install -name "$b" -type f | head -1)
+            f=$(find install \( -name "$b" -o -name "$b.exe" \) -type f | head -1)
             echo "$b: ${f:-MISSING}"
             [ -n "$f" ] || { echo "::error::$b is not in the archive"; exit 1; }
           done
           # ElmerGrid with no arguments prints its usage. Running it proves the
           # dynamic linking actually works, which listing the file does not.
-          eg=$(find install -name ElmerGrid -type f | head -1)
+          eg=$(find install \( -name ElmerGrid -o -name ElmerGrid.exe \) -type f | head -1)
           out=$("$eg" 2>&1 | head -20 || true)
           echo "$out"
           echo "$out" | grep -qi 'elmergrid' || { echo "::error::ElmerGrid did not run"; exit 1; }
@@ -288,7 +375,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: elmerfem-${{ matrix.target }}
-          path: dist/*.tar.gz
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
           if-no-files-found: error
 
   # Unpack each archive somewhere with none of the build dependencies present
@@ -311,7 +400,17 @@ jobs:
             os: macos-14
           - target: macos-x86_64
             os: macos-15-intel
-
+          # Windows, through MSYS2 UCRT64.
+          #
+          # Built without MPI on purpose. Microsoft MPI is a separate runtime
+          # the user would have to install, which is the opposite of what
+          # these archives are for; the Linux and macOS ones bundle Open MPI
+          # because it is an ordinary shared library and MSMPI is not. This is
+          # a serial ElmerSolver, and the README says so.
+          - target: windows-x86_64
+            os: windows-2022
+            mingw: true
+            cmake-extra: -DWITH_MPI=OFF
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -322,10 +421,14 @@ jobs:
         shell: bash
         run: |
           set -e
-          tar xzf dl/*.tar.gz
+          if ls dl/*.zip >/dev/null 2>&1; then
+            unzip -q dl/*.zip
+          else
+            tar xzf dl/*.tar.gz
+          fi
           d="elmerfem-${{ matrix.target }}"
-          eg=$(find "$d" -name ElmerGrid -type f | head -1)
-          es=$(find "$d" -name 'ElmerSolver*' -type f -perm -u+x | head -1)
+          eg=$(find "$d" \( -name ElmerGrid -o -name ElmerGrid.exe \) -type f | head -1)
+          es=$(find "$d" -name 'ElmerSolver*' -type f | head -1)
           echo "ElmerGrid : $eg"
           echo "ElmerSolver: $es"
           out=$("$eg" 2>&1 | head -20 || true)
