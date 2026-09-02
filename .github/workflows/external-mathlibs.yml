@@ -66,7 +66,7 @@ jobs:
         run: |
           set -e
           brew install gcc cmake ninja openblas arpack suite-sparse
-          fc=$(ls $(brew --prefix)/bin/gfortran-1* 2>/dev/null | sort -V | tail -1)
+          fc=$( { ls $(brew --prefix)/bin/gfortran-1* 2>/dev/null || true; } | sort -V | tail -1 || true )
           [ -n "$fc" ] || { echo "::error::no gfortran under $(brew --prefix)/bin"; exit 1; }
           echo "FC=$fc" >> "$GITHUB_ENV"
 
@@ -127,7 +127,10 @@ jobs:
         shell: bash
         run: |
           set -e
-          line=$(grep 'ARPACK library:' configure.log | grep -v PARPACK | tail -1)
+          # || true because bash runs with pipefail here: either grep exits 1
+          # when it matches nothing, which would end the step before the check
+          # below got to say what was actually wrong.
+          line=$(grep 'ARPACK library:' configure.log | grep -v PARPACK | tail -1 || true)
           echo "$line"
           [ -n "$line" ] || { echo "::error::configure never reported an ARPACK library"; exit 1; }
           case "$line" in
