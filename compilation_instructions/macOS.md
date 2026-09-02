@@ -9,6 +9,7 @@ Compilation for macOS
  * Install Homebrew
  * Install GCC `brew install gcc`
  * Install CMake `brew install cmake`
+ * Install SuiteSparse `brew install suite-sparse` (Elmer links its UMFPACK; it no longer carries a copy)
  * Without MPI: 
     ** `cmake .. -D WITH_OpenMP:BOOLEAN=TRUE`
  * With MPI:

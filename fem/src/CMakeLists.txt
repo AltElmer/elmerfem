@@ -201,16 +201,11 @@ ENDIF()
 SET(ELMERSOLVER_LIBRARIES matc fhuti binio arpack)
 
 IF(UMFPACK_FOUND)
-  # external implementation of UMFPACK
+  # UMFPACK and AMD come from SuiteSparse. There is no bundled copy to fall
+  # back to any more, and no need for one: the top level CMakeLists.txt makes
+  # FIND_PACKAGE(UMFPACK) REQUIRED whenever WITH_UMFPACK is on.
   LIST(APPEND ELMERSOLVER_LIBRARIES ${UMFPACK_LIBRARIES})
-
   TARGET_INCLUDE_DIRECTORIES(elmersolver PRIVATE ${UMFPACK_INCLUDE_DIR})
-  #LIST(APPEND ELMERSOLVER_LIBRARIES ${UMFPACK_LIBRARIES})
-  #TARGET_LINK_LIBRARIES(elmersolver "${UMFPACK_LIBRARIES}")
-ELSE()
-  # bundled UMFPACK
-  LIST(APPEND ELMERSOLVER_LIBRARIES umfpack amd)
-  TARGET_INCLUDE_DIRECTORIES(elmersolver PRIVATE ${PROJECT_SOURCE_DIR}/umfpack/src/umfpack/include)
 ENDIF()
 
 LIST(APPEND ELMERSOLVER_LIBRARIES

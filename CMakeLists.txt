@@ -770,31 +770,46 @@ ENDIF()
 ADD_SUBDIRECTORY(matc)
 
 
+# UMFPACK comes from SuiteSparse, which every platform Elmer targets packages.
+# The copy Elmer used to carry in umfpack/ was UMFPACK 4.4 and AMD 1.1, taken
+# from Timothy Davis' 2005 release and never updated: no line of its C source
+# changed between the 2014 import from SourceForge and its removal, only the
+# CMake rules around it. SuiteSparse itself has meanwhile reached UMFPACK 6.3,
+# so the bundled copy was twenty years of fixes behind and the only way to get
+# those fixes was to configure with -DEXTERNAL_UMFPACK=ON, which few did.
 IF (WITH_UMFPACK)
-  IF (EXTERNAL_UMFPACK)
-    MESSAGE(STATUS "Using external UMFPACK instead of built-in")
-    FIND_PACKAGE(UMFPACK REQUIRED)
-
-    # Check for size of "SuiteSparse_long"
-    INCLUDE(CheckTypeSize)
-    SET(old_CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES})
-    SET(old_CMAKE_EXTRA_INCLUDE_FILES ${CMAKE_EXTRA_INCLUDE_FILES})
-    LIST(APPEND CMAKE_REQUIRED_INCLUDES "${UMFPACK_INCLUDE_DIR}")
-    LIST(APPEND CMAKE_EXTRA_INCLUDE_FILES "umfpack.h")
-    CHECK_TYPE_SIZE("SuiteSparse_long" SIZEOF_SUITESPARSE_LONG LANGUAGE C)
-    SET(CMAKE_REQUIRED_INCLUDES ${old_CMAKE_REQUIRED_INCLUDES})
-    SET(CMAKE_EXTRA_INCLUDE_FILES ${old_CMAKE_EXTRA_INCLUDE_FILES})
-    IF (HAVE_SIZEOF_SUITESPARSE_LONG)
-      IF (SIZEOF_SUITESPARSE_LONG EQUAL 4)
-        SET(UMFPACK_LONG_FORTRAN_TYPE "C_INT32_T")
-      ELSE()
-        SET(UMFPACK_LONG_FORTRAN_TYPE "C_INT64_T")
-      ENDIF()
-    ENDIF()
-  ELSE()
-    MESSAGE(STATUS "Using built-in UMFPACK")
-    ADD_SUBDIRECTORY(umfpack)
+  IF (DEFINED EXTERNAL_UMFPACK AND NOT EXTERNAL_UMFPACK)
+    MESSAGE(FATAL_ERROR
+      "EXTERNAL_UMFPACK=OFF asks for a copy of UMFPACK inside Elmer, and there "
+      "is no longer one to build. Install SuiteSparse and configure without "
+      "the option, or with -DWITH_UMFPACK=OFF to build without UMFPACK:\n"
+      "  Debian/Ubuntu  apt install libsuitesparse-dev\n"
+      "  Fedora/RHEL    dnf install suitesparse-devel\n"
+      "  macOS          brew install suite-sparse\n"
+      "  MSYS2          pacman -S \${MINGW_PACKAGE_PREFIX}-suitesparse\n"
+      "  vcpkg          vcpkg install suitesparse\n"
+      "  conda          conda install -c conda-forge suitesparse")
   ENDIF()
+
+  FIND_PACKAGE(UMFPACK REQUIRED)
+
+  # Check for size of "SuiteSparse_long"
+  INCLUDE(CheckTypeSize)
+  SET(old_CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES})
+  SET(old_CMAKE_EXTRA_INCLUDE_FILES ${CMAKE_EXTRA_INCLUDE_FILES})
+  LIST(APPEND CMAKE_REQUIRED_INCLUDES "${UMFPACK_INCLUDE_DIR}")
+  LIST(APPEND CMAKE_EXTRA_INCLUDE_FILES "umfpack.h")
+  CHECK_TYPE_SIZE("SuiteSparse_long" SIZEOF_SUITESPARSE_LONG LANGUAGE C)
+  SET(CMAKE_REQUIRED_INCLUDES ${old_CMAKE_REQUIRED_INCLUDES})
+  SET(CMAKE_EXTRA_INCLUDE_FILES ${old_CMAKE_EXTRA_INCLUDE_FILES})
+  IF (HAVE_SIZEOF_SUITESPARSE_LONG)
+    IF (SIZEOF_SUITESPARSE_LONG EQUAL 4)
+      SET(UMFPACK_LONG_FORTRAN_TYPE "C_INT32_T")
+    ELSE()
+      SET(UMFPACK_LONG_FORTRAN_TYPE "C_INT64_T")
+    ENDIF()
+  ENDIF()
+
   SET(HAVE_UMFPACK ON)
   MARK_AS_ADVANCED(HAVE_UMFPACK)
 ELSE()
@@ -869,13 +884,12 @@ MESSAGE(STATUS "  BLAS library:   " "${BLAS_LIBRARIES}")
 MESSAGE(STATUS "  LAPACK library: " "${LAPACK_LIBRARIES}")
 MESSAGE(STATUS "------------------------------------------------")
 IF(WITH_UMFPACK)
-  IF(UMFPACK_FOUND)
-    MESSAGE(STATUS " UMFPACK library: " "${UMFPACK_LIBRARIES}")
-    MESSAGE(STATUS " UMFPACK headers: " "${UMFPACK_INCLUDE_DIR}")
-    MESSAGE(STATUS "------------------------------------------------")
-  ELSE()
-    MESSAGE(STATUS " UMFPACK library: Using internal Elmer library")
-  ENDIF()
+  # FIND_PACKAGE(UMFPACK REQUIRED) above stops the configure when it is not
+  # found, so there is no "not found but carrying on with the internal copy"
+  # case left to report.
+  MESSAGE(STATUS " UMFPACK library: " "${UMFPACK_LIBRARIES}")
+  MESSAGE(STATUS " UMFPACK headers: " "${UMFPACK_INCLUDE_DIR}")
+  MESSAGE(STATUS "------------------------------------------------")
 ELSE()
   MESSAGE(STATUS " UMFPACK library: Building without UMFPACK")
 ENDIF()

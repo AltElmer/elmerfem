@@ -19,6 +19,12 @@ Our policy regarding the distribution of METIS with third-party applications is 
 
 License lic_amd
 ---------------
+Elmer no longer ships a copy of AMD; it links the AMD in whichever SuiteSparse
+the platform provides, so the version below is the one this text was written
+against rather than the one you are running. The licence is reproduced because
+its citation requirement applies to code that uses AMD, not only to code that
+redistributes it.
+
 AMD Version 1.1 (Jan. 21, 2004),  Copyright (c) 2004 by Timothy A.
 Davis, Patrick R. Amestoy, and Iain S. Duff.  All Rights Reserved.
                                                                                                                                 
@@ -183,6 +189,13 @@ License lic_tk
                                                                                                            
 License lic_umfpack
 -------------------
+Elmer no longer ships a copy of UMFPACK; it links the UMFPACK in whichever
+SuiteSparse the platform provides, so the version below is the one this text
+was written against rather than the one you are running. The licence is
+reproduced because its citation requirement applies to code that uses UMFPACK,
+not only to code that redistributes it. Note that this entry said 4.3 while
+the copy Elmer actually carried in umfpack/ was 4.4.
+
 UMFPACK Version 4.3 (Jan. 16, 2003),  Copyright (c) 2003 by Timothy A.
 Davis.  All Rights Reserved.
                                                                                                                                 

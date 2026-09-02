@@ -1,0 +1,207 @@
+name: external-umfpack
+
+# Elmer built against the SuiteSparse the platform packages, with no copy of
+# UMFPACK inside the tree.
+#
+# Building is not the claim being made here. Elmer's own tests are the claim:
+# a .sif that asks for "Linear System Direct Method = Umfpack" is fatal when
+# UMFPACK is absent (fem/src/MainUtils.F90 calls Fatal with "UMFPACK (and
+# MUMPS) solver has not been installed."), so a green test is evidence that
+# the system library was found, linked and produced the right answer, and not
+# merely that the configure step did not complain.
+
+on:
+  push:
+    branches: [feat/external-umfpack]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: external-umfpack-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Small serial cases spanning several physics, all of which name Umfpack as
+  # their direct method. Named rather than globbed so a run is reproducible and
+  # so a case quietly losing its Umfpack line cannot silently shrink the check.
+  UMFPACK_TESTS: WaveEqu|bodyload|bodydir|InductionHeating|elstat_source|ElasticGeomStiff|freesurf_axi|LimitDisplacement|FilmFlowPlane2|HeatSolveVecDGandMortar
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64 (gcc)
+            os: ubuntu-24.04
+          - name: linux-arm64 (gcc)
+            os: ubuntu-24.04-arm
+          - name: linux-x86_64 (clang)
+            os: ubuntu-24.04
+            clang: true
+            cmake-extra: -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          - name: macos-arm64 (gcc)
+            os: macos-14
+            brew: true
+          - name: macos-x86_64 (gcc)
+            os: macos-15-intel
+            brew: true
+          - name: windows-x86_64 (mingw)
+            os: windows-2022
+            mingw: true
+          # No windows-arm64 job. MSYS2 packages SuiteSparse for CLANGARM64,
+          # but no Fortran compiler for it, and Elmer's solver is Fortran. The
+          # gap is the toolchain, not this change.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: dependencies (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gfortran cmake ninja-build \
+            libsuitesparse-dev libopenblas-dev liblapack-dev
+          if [ "${{ matrix.clang }}" = "true" ]; then sudo apt-get install -y clang; fi
+
+      - name: dependencies (macos)
+        if: matrix.brew
+        run: |
+          set -e
+          brew install gcc cmake ninja suite-sparse openblas
+          fc=$(ls $(brew --prefix)/bin/gfortran-1* 2>/dev/null | sort -V | tail -1)
+          [ -n "$fc" ] || { echo "::error::no gfortran under $(brew --prefix)/bin"; exit 1; }
+          echo "FC=$fc" >> "$GITHUB_ENV"
+
+      - name: dependencies (mingw)
+        if: matrix.mingw
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc-fortran
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-suitesparse
+            mingw-w64-ucrt-x86_64-openblas
+
+      # The tree must actually be gone. Without this the whole workflow could
+      # pass on a branch that still carried the vendored copy.
+      - name: there is no umfpack directory
+        shell: bash
+        run: |
+          if [ -e umfpack ]; then
+            echo "::error::umfpack/ is still in the tree; this branch is supposed to have removed it"
+            exit 1
+          fi
+          echo "ok: no umfpack/ in the source tree"
+
+      - name: which UMFPACK the package manager supplied
+        shell: bash
+        run: |
+          set -e
+          hdr=$(find /usr/include /usr/local/include /opt/homebrew/include \
+                     "${RUNNER_TEMP:-/tmp}" -name umfpack.h 2>/dev/null | head -1)
+          if [ -n "$hdr" ]; then
+            echo "header: $hdr"
+            grep -E '#define UMFPACK_(MAIN|SUB|SUBSUB)_VERSION|#define UMFPACK_DATE' "$hdr" || true
+          else
+            echo "header not located by this probe; the configure step below is the real check"
+          fi
+
+      - name: configure and build
+        if: '!matrix.mingw'
+        shell: bash
+        run: |
+          set -e
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_ELMERGUI=OFF -DWITH_MPI=OFF -DWITH_ELMERPOST=OFF \
+            -DWITH_UMFPACK=ON ${{ matrix.cmake-extra }} 2>&1 | tee configure.log
+          cmake --build build -j 4
+
+      - name: configure and build (mingw)
+        if: matrix.mingw
+        shell: msys2 {0}
+        run: |
+          set -e
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_ELMERGUI=OFF -DWITH_MPI=OFF -DWITH_ELMERPOST=OFF \
+            -DWITH_UMFPACK=ON 2>&1 | tee configure.log
+          cmake --build build -j 4
+
+      # CMake said it found a UMFPACK; this says which one, and fails if the
+      # path it picked is inside the source tree after all.
+      - name: the UMFPACK it found is a system one
+        shell: bash
+        run: |
+          set -e
+          line=$(grep 'UMFPACK library:' configure.log | tail -1)
+          echo "$line"
+          [ -n "$line" ] || { echo "::error::configure never reported a UMFPACK library"; exit 1; }
+          case "$line" in
+            *"$PWD"*) echo "::error::the UMFPACK found is inside the checkout"; exit 1 ;;
+          esac
+          echo "ok: UMFPACK comes from outside the source tree"
+
+      - name: run the tests that need UMFPACK
+        if: '!matrix.mingw'
+        shell: bash
+        run: |
+          set -e
+          ctest --test-dir build -R "$UMFPACK_TESTS" --output-on-failure -j 2 | tee ctest.log
+          n=$(grep -cE '^ *[0-9]+/[0-9]+ +Test ' ctest.log || true)
+          echo "tests run: $n"
+          # A regex that matches nothing makes ctest exit 0 with no tests, which
+          # would otherwise read as a pass.
+          [ "$n" -ge 8 ] || { echo "::error::only $n tests ran; the selection matched almost nothing"; exit 1; }
+
+      - name: run the tests that need UMFPACK (mingw)
+        if: matrix.mingw
+        shell: msys2 {0}
+        run: |
+          set -e
+          ctest --test-dir build -R "$UMFPACK_TESTS" --output-on-failure -j 2 | tee ctest.log
+          n=$(grep -cE '^ *[0-9]+/[0-9]+ +Test ' ctest.log || true)
+          echo "tests run: $n"
+          [ "$n" -ge 8 ] || { echo "::error::only $n tests ran; the selection matched almost nothing"; exit 1; }
+
+  # The removal leaves one option meaningless, and a configure that quietly
+  # ignored it would send someone looking for a build they cannot get. This
+  # asserts the failure happens and that it says what to install.
+  refuses-the-old-option:
+    name: -DEXTERNAL_UMFPACK=OFF fails with an explanation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran cmake ninja-build libsuitesparse-dev libopenblas-dev liblapack-dev
+
+      - name: it must refuse, and name a package
+        run: |
+          set +e
+          cmake -S . -B build-off -G Ninja -DWITH_MPI=OFF -DWITH_ELMERGUI=OFF \
+            -DWITH_UMFPACK=ON -DEXTERNAL_UMFPACK=OFF > off.log 2>&1
+          rc=$?
+          set -e
+          cat off.log | tail -30
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::configure accepted -DEXTERNAL_UMFPACK=OFF; it should have stopped"
+            exit 1
+          fi
+          grep -q 'libsuitesparse-dev' off.log || {
+            echo "::error::it failed, but without telling anyone what to install"; exit 1; }
+          echo "ok: refused, and the message names the packages"
+
+      # The control. The same configure without the option must succeed, or the
+      # check above would pass for the wrong reason.
+      - name: and the ordinary configure still works
+        run: |
+          cmake -S . -B build-on -G Ninja -DWITH_MPI=OFF -DWITH_ELMERGUI=OFF -DWITH_UMFPACK=ON
+          echo "ok: configure succeeds when the option is left alone"
