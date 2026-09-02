@@ -859,6 +859,17 @@ ENDIF(WITH_ELMERGUILOGGER)
 IF(WITH_ELMERPOST)
   MESSAGE(WARNING "  Building ElmerPost")
   MESSAGE(STATUS "------------------------------------------------")
+  # post/ is a submodule, so it can be absent from a clone that did not ask
+  # for it. Say so, rather than letting ADD_SUBDIRECTORY fail with "does not
+  # contain a CMakeLists.txt file", which is what -DWITH_ELMERPOST=ON does on
+  # devel today: the option outlived the code when ElmerPost was moved out in
+  # December 2025 and only post/README.md was left behind.
+  IF(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/post/CMakeLists.txt")
+    MESSAGE(FATAL_ERROR
+      "WITH_ELMERPOST is ON but the post submodule is not checked out.\n"
+      "Run:\n"
+      "  git submodule update --init post")
+  ENDIF()
   ADD_SUBDIRECTORY(post)
 ENDIF(WITH_ELMERPOST)
 

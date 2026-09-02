@@ -1,3 +1,6 @@
 [submodule "contrib/Zoltan_v3.83"]
 	path = contrib/Zoltan_v3.83
 	url = https://github.com/ElmerCSC/Zoltan
+[submodule "post"]
+	path = post
+	url = https://github.com/AltElmer/ElmerPost.git
