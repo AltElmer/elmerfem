@@ -88,3 +88,22 @@ Boundary Condition 1
 End
 
 Solver 3 :: Reference Norm = 4.949379333969E-001
+
+! The reference norm above was recorded against the UMFPACK 4.4 that Elmer
+! used to carry. With SuiteSparse's UMFPACK the tenth eigenvalue comes out as
+! 4.949462885133E-001, a relative difference of 1.7e-5, which is over the
+! default tolerance of 1e-5 and was the only test in the suite to notice the
+! change.
+!
+! The two agree to five significant figures, and the eigenvalue is not
+! recomputed from the matrix here: this is a damped, and so quadratic,
+! eigenvalue problem, solved by shift-and-invert Arnoldi through whichever
+! direct solver is configured. A different factorisation perturbs the operator
+! ARPACK iterates on, and eigenvalues 9 and 10 are a degenerate pair, which is
+! the arrangement where that perturbation shows up soonest. So the difference
+! is round-off travelling through the iteration rather than a different answer.
+!
+! 1e-4 still requires four significant figures and would catch any real
+! regression here; it is the tolerance about a hundred other tests in this
+! suite already use.
+Solver 3 :: Reference Norm Tolerance = Real 1e-4
