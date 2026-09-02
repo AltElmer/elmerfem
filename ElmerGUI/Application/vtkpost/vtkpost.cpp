@@ -27,7 +27,7 @@
  *                                                                           *
  *****************************************************************************
  *                                                                           *
- *  Authors: Mikko Lyly, Juha Ruokolainen and Peter Råback                   *
+ *  Authors: Mikko Lyly, Juha Ruokolainen and Peter Rï¿½back                   *
  *  Email:   Juha.Ruokolainen@csc.fi                                         *
  *  Web:     http://www.csc.fi/elmer                                         *
  *  Address: CSC - IT Center for Science Ltd.                                 *
@@ -2707,10 +2707,22 @@ void VtkPost::hideTextSlot()
 void VtkPost::drawTextSlot()
 {
   if(!postFileRead) return;
-  renderer->RemoveActor2D(textActor);
+  // AddViewProp/RemoveViewProp rather than AddActor2D/RemoveActor2D.
+  //
+  // Current VTK no longer has AddActor2D or RemoveActor2D on vtkRenderer, so
+  // this file stopped compiling:
+  //
+  //   error: no member named 'RemoveActor2D' in 'vtkRenderer';
+  //          did you mean 'RemoveActor'?
+  //
+  // The compiler's suggestion is not the right one: AddActor takes a 3D prop
+  // and would place the annotation in the scene rather than overlaid on it.
+  // AddViewProp accepts any vtkProp, including a vtkActor2D, and is what
+  // AddActor2D was a thin wrapper around.
+  renderer->RemoveViewProp(textActor);
   if(!drawTextAct->isChecked()) return;
   text->draw(this);
-  renderer->AddActor2D(textActor);
+  renderer->AddViewProp(textActor);
 #if VTK_MAJOR_VERSION >= 9
   qvtkWidget->renderWindow()->Render();
 #else
