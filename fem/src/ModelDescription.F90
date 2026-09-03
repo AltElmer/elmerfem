@@ -1451,8 +1451,10 @@ CONTAINS
 
              i = INDEX( str, ':' )
              j = INDEX( str, "'" )
-             IF ( i <= 0 .OR. j<= 0 ) CYCLE
-             str1 = str(1:i-1) // ':' //  str(j+1:LEN_TRIM(str)-1)
+             IF ( i <= 0 .OR. j <= 0 ) CYCLE
+             k = INDEX( str(j+1:), "'" )
+             IF ( k <= 0 ) CYCLE
+             str1 = str(1:i-1) // ':' //  str(j+1:j+k-1)
 
              ALLOCATE( Val, STAT=istat )
 
@@ -1467,7 +1469,10 @@ CONTAINS
                 END IF
              END IF
 
-             Val % TYPE = str(i+1:j-3)
+             Val % TYPE = ADJUSTL(str(i+1:j-1))
+             n = INDEX(Val % TYPE, ':')
+             IF ( n > 0 ) Val % TYPE = Val % TYPE(1:n-1)
+             Val % TYPE = TRIM(ADJUSTL(Val % TYPE))
 
              lstat = HashAdd( hash, str1, Val )
              IF ( .NOT. lstat ) THEN
