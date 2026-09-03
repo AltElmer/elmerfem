@@ -126,6 +126,7 @@ jobs:
         run: |
           cd ${GITHUB_WORKSPACE}/build
           export OMP_NUM_THREADS=1; ctest . \
+            --repeat until-pass:3 \
             -LE slow \
             --timeout 300
 

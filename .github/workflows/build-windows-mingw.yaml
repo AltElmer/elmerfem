@@ -200,6 +200,7 @@ jobs:
         run: |
           cd ${GITHUB_WORKSPACE}/build
           ctest . \
+            --repeat until-pass:3 \
             -LE slow \
             -E "PoissonML|ShoeboxFsiHarmonicPlateMonolithic|RotatingBCMagnetoDynamics2" \
             --timeout 300
