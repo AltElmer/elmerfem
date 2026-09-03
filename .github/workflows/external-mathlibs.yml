@@ -33,7 +33,7 @@ jobs:
           - name: linux-x86_64 (gcc, MPI)
             os: ubuntu-24.04
             mpi: true
-            cmake-extra: -DWITH_MPI=ON
+            cmake-extra: -DWITH_MPI=ON -DMPIEXEC_PREFLAGS=--oversubscribe
           - name: macos-arm64 (gcc)
             os: macos-14
             brew: true
@@ -146,6 +146,8 @@ jobs:
         shell: bash
         env:
           CTEST_OUTPUT_ON_FAILURE: 1
+          OMPI_MCA_rmaps_base_oversubscribe: 1
+          PRTE_MCA_rmaps_default_mapping_policy: ":oversubscribe"
         run: |
           set -e
           ctest --test-dir build -L eigen --output-on-failure -j 2 --timeout 600 | tee ctest.log

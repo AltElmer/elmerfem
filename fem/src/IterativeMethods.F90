@@ -2683,7 +2683,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(HUTI_DPAR_DFLTSIZE) :: dpar
     COMPLEX(KIND=dp), DIMENSION(HUTI_WRKDIM,HUTI_NDIM) :: work
 
-    COMPLEX(KIND=dp) :: y(HUTI_NDIM),f(HUTI_NDIM)
+    COMPLEX(KIND=dp), ALLOCATABLE :: y(:), f(:)
     INTEGER :: ndim, i, PolynomialDegree
     INTEGER :: Rounds, OutputInterval
     REAL(KIND=dp) :: MinTol, MaxTol
@@ -2700,6 +2700,7 @@ CONTAINS
     ! Transform the solution vector and the right-hand side vector to 
     ! complex-valued vectors y and f
     !---------------------------------------------------------------------------
+    ALLOCATE( y(ndim), f(ndim) )
     DO i=1,ndim
       y(i)=xvec(i)
       f(i)=rhsvec(i)
@@ -2715,6 +2716,7 @@ CONTAINS
     DO i=1,ndim
       xvec(i) = y(i)
     END DO
+    DEALLOCATE( y, f )
 
   CONTAINS 
 
@@ -2738,12 +2740,12 @@ CONTAINS
       COMPLEX(KIND=dp) :: x(n), b(n)
       REAL(KIND=dp) :: Tol, MaxTol
       !------------------------------------------------------------------------------
-      COMPLEX(KIND=dp) :: zzero, zone, t(n), kappa0, kappal 
+      COMPLEX(KIND=dp) :: zzero, zone, kappa0, kappal 
       REAL(KIND=dp) :: rnrm0, rnrm, mxnrmx, mxnrmr, errorind, &
            delta = 1.0d-2, bnrm
       INTEGER :: i, j, rr, r, u, xp, bp, z, zz, y0, yl, y, k, iwork(l-1), stat, Round
       COMPLEX(KIND=dp) :: alpha, beta, omega, rho0, rho1, sigma, zdotc, varrho, hatgamma
-      COMPLEX(KIND=dp), ALLOCATABLE :: work(:,:), rwork(:,:)
+      COMPLEX(KIND=dp), ALLOCATABLE :: work(:,:), rwork(:,:), t(:)
       LOGICAL rcmp, xpdt, EarlyExit
       !------------------------------------------------------------------------------
 
@@ -2754,7 +2756,7 @@ CONTAINS
       zzero = CMPLX( 0.0d0,0.0d0, KIND=dp)
       zone =  CMPLX( 1.0d0,0.0d0, KIND=dp)
 
-      ALLOCATE( work(n,3+2*(l+1)), rwork(l+1,3+2*(l+1)) )
+      ALLOCATE( work(n,3+2*(l+1)), rwork(l+1,3+2*(l+1)), t(n) )
       work = CMPLX( 0.0d0, 0.0d0, KIND=dp )
       rwork = CMPLX( 0.0d0, 0.0d0, KIND=dp )
 
@@ -2782,7 +2784,7 @@ CONTAINS
       IF (bnrm == 0.0d0) THEN
         Converged = .TRUE.
         x = zzero
-        DEALLOCATE(work, rwork)
+        DEALLOCATE(work, rwork, t)
         RETURN
       END IF
 
@@ -2790,7 +2792,10 @@ CONTAINS
       Converged = (errorind < Tol)
       Diverged = (errorind > MaxTol) .OR. (errorind /= errorind)
 
-      IF( Converged .OR. Diverged) RETURN
+      IF( Converged .OR. Diverged) THEN
+        DEALLOCATE(work, rwork, t)
+        RETURN
+      END IF
       EarlyExit = .FALSE.
 
       work(1:n,rr) = work(1:n,r) 
@@ -2979,6 +2984,7 @@ CONTAINS
       t(1:n) = x(1:n)
       CALL pcondrsubr( x, t, ipar )
       x(1:n) = x(1:n) + work(1:n,xp)      
+      DEALLOCATE(work, rwork, t)      
 
     !----------------------------------------------------------
     END SUBROUTINE ComplexBiCGStabl

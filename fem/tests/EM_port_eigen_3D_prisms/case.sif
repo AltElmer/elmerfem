@@ -21,6 +21,7 @@ Simulation
   Simulation Type = Steady State
   Steady State Max Iterations = 1
   Max Output Level = 7
+  Global Abort Not Converged = Logical False
 End
 
 Constants
@@ -237,7 +238,7 @@ Solver 7
   Linear System Solver = "Iterative"
   Linear System Iterative Method = String "bicgstab2"
   Linear System Complex = True
-  BiCGstabl polynomial degree = Integer 4  
+  BiCGstabl polynomial degree = Integer 2  
   Linear System Preconditioning = String "ILU1"
   Linear System Max Iterations = Integer 1000
   Linear System Convergence Tolerance = 1.0e-7
