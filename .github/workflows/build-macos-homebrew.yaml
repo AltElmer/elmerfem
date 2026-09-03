@@ -59,7 +59,7 @@ jobs:
           sysctl machdep
 
       - name: checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: install dependencies
 
@@ -72,6 +72,9 @@ jobs:
         # It looks like "gfortran" isn't working correctly unless "gcc" is
         # re-installed.
         run: |
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+          export HOMEBREW_NO_ENV_HINTS=1
+          brew untap aws/tap 2>/dev/null || true
           brew update
           if [ "x${{ matrix.gui }}" == "xwith" ]; then
             brew install --overwrite python@3.12 python@3.13
