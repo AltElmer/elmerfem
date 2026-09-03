@@ -55,6 +55,18 @@ jobs:
           install: >-
             base-devel
             git
+          # seacas and everything below it are here because VTK's own
+          # vtk-config.cmake calls find_package on each of them, so
+          # FIND_PACKAGE(VTK) fails without them:
+          #
+          #   CMake Error at .../vtk/VTK-vtk-module-find-packages.cmake:544
+          #     Could not find a package configuration file provided by
+          #     "SEACASIoss"
+          #   Call Stack: .../vtk-config.cmake:171
+          #               ElmerGUI/CMakeLists.txt:145 (FIND_PACKAGE)
+          #
+          # MSYS2 packages all of them, but pacman does not install any of
+          # them as a dependency of vtk, so they have to be named.
           pacboy: >-
             cc:p
             fc:p
@@ -67,6 +79,19 @@ jobs:
             qt6-declarative:p
             qwt-qt6:p
             vtk:p
+            seacas:p
+            exprtk:p
+            hdf5:p
+            libogg:p
+            libpng:p
+            libtheora:p
+            libxml2:p
+            nlohmann-json:p
+            openvr:p
+            proj:p
+            python:p
+            qt6-base:p
+            sqlite3:p
             adios2:p
             anari-sdk:p
             boost:p
