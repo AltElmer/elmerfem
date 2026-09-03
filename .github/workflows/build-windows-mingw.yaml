@@ -47,7 +47,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: install dependencies
+      - name: setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.msystem }}
@@ -55,6 +55,14 @@ jobs:
           install: >-
             base-devel
             git
+
+      - name: install dependencies
+        shell: msys2 {0}
+        run: |
+          # Prevent timeout aborts on slow or lagging mirrors
+          grep -q "^DisableDownloadTimeout" /etc/pacman.conf || sed -i '/^\[options\]/a DisableDownloadTimeout' /etc/pacman.conf
+          sed -i 's/^#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
+
           # seacas and everything below it are here because VTK's own
           # vtk-config.cmake calls find_package on each of them, so
           # FIND_PACKAGE(VTK) fails without them:
@@ -67,7 +75,7 @@ jobs:
           #
           # MSYS2 packages all of them, but pacman does not install any of
           # them as a dependency of vtk, so they have to be named.
-          pacboy: >-
+          packages=(
             cc:p
             fc:p
             cmake:p
@@ -112,6 +120,23 @@ jobs:
             utf8cpp:p
             opencascade:p
             ${{ matrix.external-packages }}
+          )
+
+          for attempt in 1 2 3; do
+            echo "::group::Installing dependencies (attempt ${attempt}/3)"
+            if pacboy -S --noconfirm --needed --disable-download-timeout "${packages[@]}"; then
+              echo "::endgroup::"
+              echo "All dependencies installed successfully."
+              break
+            fi
+            echo "::endgroup::"
+            if [ "$attempt" -eq 3 ]; then
+              echo "Error: Failed to install dependencies after 3 attempts."
+              exit 1
+            fi
+            echo "Transient mirror download failure; retrying in 10s..."
+            sleep 10
+          done
 
       - name: install MSMPI
         uses: mpi4py/setup-mpi@v1
