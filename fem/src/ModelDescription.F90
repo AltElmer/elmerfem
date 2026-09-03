@@ -1369,6 +1369,7 @@ CONTAINS
 
     SUBROUTINE CheckKeyWord( Name,TYPE,CheckAbort,FreeNames,Section,ReturnType )
        USE HashTable
+       USE Lists, ONLY : StringToLowerCase
 
        CHARACTER(LEN=*) :: Name,TYPE,Section
        INTEGER :: CheckAbort
@@ -1455,6 +1456,7 @@ CONTAINS
              k = INDEX( str(j+1:), "'" )
              IF ( k <= 0 ) CYCLE
              str1 = str(1:i-1) // ':' //  str(j+1:j+k-1)
+             n = StringToLowerCase( str1, str1, .TRUE. )
 
              ALLOCATE( Val, STAT=istat )
 
@@ -1473,6 +1475,7 @@ CONTAINS
              n = INDEX(Val % TYPE, ':')
              IF ( n > 0 ) Val % TYPE = Val % TYPE(1:n-1)
              Val % TYPE = TRIM(ADJUSTL(Val % TYPE))
+             n = StringToLowerCase( Val % TYPE, Val % TYPE, .TRUE. )
 
              lstat = HashAdd( hash, str1, Val )
              IF ( .NOT. lstat ) THEN
@@ -1640,7 +1643,7 @@ CONTAINS
 !------------------------------------------------------------------------------
     RECURSIVE SUBROUTINE SectionContents( Model,List, CheckAbort,FreeNames, &
               Section, InFileUnit, ScanOnly, Echo )
-!------------------------------------------------------------------------------
+      USE Lists, ONLY : StringToLowerCase
       TYPE(ValueList_t), POINTER :: List,ll
       INTEGER :: InFileUnit,CheckAbort
       TYPE(Model_t) :: Model
@@ -1722,6 +1725,7 @@ CONTAINS
             j = i
           END DO
           Keyword=str(1:j)
+          n = StringToLowerCase( Keyword, Keyword, .TRUE. )
           str_beg = j+2
 
           SELECT CASE(Keyword)
