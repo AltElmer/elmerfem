@@ -47,7 +47,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: install dependencies
+      - name: setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.msystem }}
@@ -55,8 +55,21 @@ jobs:
           install: >-
             base-devel
             git
-          # seacas is here because VTK's own vtk-config.cmake calls
-          # find_package(SEACASIoss), so FIND_PACKAGE(VTK) fails without it:
+            pactoys
+
+      - name: install dependencies
+        shell: msys2 {0}
+        run: |
+          # Prevent timeout aborts on slow or lagging mirrors
+          grep -q "^DisableDownloadTimeout" /etc/pacman.conf || sed -i '/^\[options\]/a DisableDownloadTimeout' /etc/pacman.conf
+          sed -i 's/^#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
+
+          # Ensure pactoys (providing pacboy) is installed
+          command -v pacboy >/dev/null 2>&1 || pacman -S --noconfirm --needed pactoys
+
+          # seacas and everything below it are here because VTK's own
+          # vtk-config.cmake calls find_package on each of them, so
+          # FIND_PACKAGE(VTK) fails without them:
           #
           #   CMake Error at .../vtk/VTK-vtk-module-find-packages.cmake:544
           #     Could not find a package configuration file provided by
@@ -64,9 +77,9 @@ jobs:
           #   Call Stack: .../vtk-config.cmake:171
           #               ElmerGUI/CMakeLists.txt:145 (FIND_PACKAGE)
           #
-          # MSYS2 packages it, but pacman does not install it as a dependency
-          # of vtk, so it has to be named.
-          pacboy: >-
+          # MSYS2 packages all of them, but pacman does not install any of
+          # them as a dependency of vtk, so they have to be named.
+          packages=(
             cc:p
             fc:p
             cmake:p
@@ -90,7 +103,8 @@ jobs:
             proj:p
             python:p
             qt6-base:p
-            sqlite3:p            adios2:p
+            sqlite3:p
+            adios2:p
             anari-sdk:p
             boost:p
             cgns:p
@@ -110,6 +124,23 @@ jobs:
             utf8cpp:p
             opencascade:p
             ${{ matrix.external-packages }}
+          )
+
+          for attempt in 1 2 3; do
+            echo "::group::Installing dependencies (attempt ${attempt}/3)"
+            if pacboy -S --noconfirm --needed --disable-download-timeout "${packages[@]}"; then
+              echo "::endgroup::"
+              echo "All dependencies installed successfully."
+              break
+            fi
+            echo "::endgroup::"
+            if [ "$attempt" -eq 3 ]; then
+              echo "Error: Failed to install dependencies after 3 attempts."
+              exit 1
+            fi
+            echo "Transient mirror download failure; retrying in 10s..."
+            sleep 10
+          done
 
       - name: install MSMPI
         uses: mpi4py/setup-mpi@v1
@@ -185,6 +216,7 @@ jobs:
           # remove duplicate test names
           unique_failed_tests=($(echo "${failed_tests[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
           for test in "${unique_failed_tests[@]}"; do
+            # check if test is from fem or ElmerIce
             if [ -d fem/tests/${test} ]; then
               test_root=fem/tests
             else
