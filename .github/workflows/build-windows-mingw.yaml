@@ -55,6 +55,7 @@ jobs:
           install: >-
             base-devel
             git
+            pactoys
 
       - name: install dependencies
         shell: msys2 {0}
@@ -62,6 +63,9 @@ jobs:
           # Prevent timeout aborts on slow or lagging mirrors
           grep -q "^DisableDownloadTimeout" /etc/pacman.conf || sed -i '/^\[options\]/a DisableDownloadTimeout' /etc/pacman.conf
           sed -i 's/^#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
+
+          # Ensure pactoys (providing pacboy) is installed
+          command -v pacboy >/dev/null 2>&1 || pacman -S --noconfirm --needed pactoys
 
           # seacas and everything below it are here because VTK's own
           # vtk-config.cmake calls find_package on each of them, so

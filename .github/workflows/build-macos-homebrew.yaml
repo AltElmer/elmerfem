@@ -73,13 +73,14 @@ jobs:
         # re-installed.
         run: |
           brew update
-          brew install --overwrite python@3.12 python@3.13
-          brew reinstall gcc
           if [ "x${{ matrix.gui }}" == "xwith" ]; then
+            brew install --overwrite python@3.12 python@3.13
+            brew reinstall gcc
             brew install \
               cmake openblas open-mpi \
               qwt vtk opencascade expat
           else
+            brew reinstall gcc
             brew install --skip-post-install \
               cmake openblas open-mpi \
               ${{ matrix.openmp == 'with' && 'libomp suitesparse' || '' }} \
