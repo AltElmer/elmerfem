@@ -48,7 +48,7 @@ jobs:
           # toolchain, not this change.
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: dependencies (linux)
         if: runner.os == 'Linux'
@@ -68,6 +68,9 @@ jobs:
         if: matrix.brew
         run: |
           set -e
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+          export HOMEBREW_NO_ENV_HINTS=1
+          brew untap aws/tap 2>/dev/null || true
           brew install gcc cmake ninja openblas arpack suite-sparse
           fc=$( { ls $(brew --prefix)/bin/gfortran-1* 2>/dev/null || true; } | sort -V | tail -1 || true )
           [ -n "$fc" ] || { echo "::error::no gfortran under $(brew --prefix)/bin"; exit 1; }
@@ -209,7 +212,7 @@ jobs:
     name: -DEXTERNAL_ARPACK=OFF fails with an explanation
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - run: |
           sudo apt-get update
