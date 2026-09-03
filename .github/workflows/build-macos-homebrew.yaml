@@ -18,7 +18,7 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
-    name: ${{ matrix.os }} (${{ matrix.openmp }} OpenMP)
+    name: ${{ matrix.os }} (${{ matrix.openmp }} OpenMP${{ matrix.gui == 'without' && ', solver-only' || '' }})
 
     strategy:
       # Allow other runners in the matrix to continue if some fail
@@ -27,6 +27,7 @@ jobs:
       matrix:
         os: [macos-14]
         openmp: [without]
+        gui: [with]
         # Building with OpenMP causes some test failures on macOS on Apple
         # Silicon.
         # The affected tests currently are: H1BasisEvaluation and
@@ -38,8 +39,18 @@ jobs:
         # FIXME: Consider building with OpenMP again when this (potentially
         # upstream) issue has been fixed.
         include:
+          # The Intel leg is slimmed to the solver (gui: without). Homebrew
+          # ended Intel support in September 2026 (announced August 2025),
+          # so vtk would build from source for ~1h35m on every push: the GUI
+          # (the reason vtk, qwt and opencascade are installed at all) is
+          # off in this leg only. It also installs with
+          # --skip-post-install, because openssl@3's post-install step fails
+          # outright on the unmaintained-on-Intel Homebrew, and brew exits 1
+          # over it even though everything installed. GitHub retires the
+          # Intel runners themselves in 2027.
           - os: macos-15-intel
             openmp: with
+            gui: without
 
     steps:
       - name: get CPU information
@@ -64,10 +75,16 @@ jobs:
           brew update
           brew install --overwrite python@3.12 python@3.13
           brew reinstall gcc
-          brew install \
-            cmake openblas open-mpi \
-            ${{ matrix.openmp == 'with' && 'libomp suitesparse' || '' }} \
-            qwt vtk opencascade expat
+          if [ "x${{ matrix.gui }}" == "xwith" ]; then
+            brew install \
+              cmake openblas open-mpi \
+              qwt vtk opencascade expat
+          else
+            brew install --skip-post-install \
+              cmake openblas open-mpi \
+              ${{ matrix.openmp == 'with' && 'libomp suitesparse' || '' }} \
+              expat
+          fi
           echo "HOMEBREW_PREFIX=$(brew --prefix)" >> $GITHUB_ENV
 
       - name: configure
@@ -101,12 +118,16 @@ jobs:
             -DWITH_Mumps=OFF \
             -DWITH_CHOLMOD=${{ matrix.openmp == 'with' && 'ON' || 'OFF' }} \
             -DWITH_ElmerIce=ON \
-            -DWITH_ELMERGUI=ON \
-            -DWITH_QT6=ON \
-            -DQWT_INCLUDE_DIR="${HOMEBREW_PREFIX}/opt/qwt/lib/qwt.framework/Headers" \
-            -DWITH_VTK=ON \
+            ${{ matrix.gui == 'with'
+              && '-DWITH_ELMERGUI=ON \
+                  -DWITH_QT6=ON \
+                  -DQWT_INCLUDE_DIR="${HOMEBREW_PREFIX}/opt/qwt/lib/qwt.framework/Headers" \
+                  -DWITH_VTK=ON \
+                  -DWITH_OCC=ON'
+              || '-DWITH_ELMERGUI=OFF \
+                  -DWITH_VTK=OFF \
+                  -DWITH_OCC=OFF' }} \
             -DEXPAT_INCLUDE_DIR="${HOMEBREW_PREFIX}/opt/expat/include" \
-            -DWITH_OCC=ON \
             -DWITH_MATC=ON \
             -DWITH_PARAVIEW=ON \
             -DCREATE_PKGCONFIG_FILE=ON \
