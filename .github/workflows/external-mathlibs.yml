@@ -59,6 +59,9 @@ jobs:
             libopenblas-dev liblapack-dev libarpack2-dev libsuitesparse-dev
           if [ "${{ matrix.mpi }}" = "true" ]; then
             sudo apt-get install -y libopenmpi-dev openmpi-bin libparpack2-dev
+            # Ubuntu 24.04 (noble) libparpack2-dev installs arpackng-config.cmake
+            # that unconditionally includes non-existent arpackngTargets.cmake.
+            sudo rm -rf /usr/lib/*/cmake/arpack-ng
           fi
 
       - name: dependencies (macos)
@@ -141,6 +144,8 @@ jobs:
       - name: run the eigenvalue tests
         if: '!matrix.mingw'
         shell: bash
+        env:
+          CTEST_OUTPUT_ON_FAILURE: 1
         run: |
           set -e
           ctest --test-dir build -L eigen --output-on-failure -j 2 --timeout 600 | tee ctest.log
@@ -150,15 +155,41 @@ jobs:
           # as a pass for a check that never ran.
           [ "$n" -ge 20 ] || { echo "::error::only $n eigen tests ran; expected around 27"; exit 1; }
 
+      - name: show test logs on failure
+        if: failure() && !matrix.mingw
+        shell: bash
+        run: |
+          for f in build/fem/tests/*/test-std*.log; do
+            [ -f "$f" ] || continue
+            echo "========================================================================"
+            echo "FILE: $f"
+            echo "========================================================================"
+            tail -n 200 "$f"
+          done
+
       - name: run the eigenvalue tests (mingw)
         if: matrix.mingw
         shell: msys2 {0}
+        env:
+          CTEST_OUTPUT_ON_FAILURE: 1
         run: |
           set -e
           ctest --test-dir build -L eigen --output-on-failure -j 2 --timeout 600 | tee ctest.log
           n=$(grep -cE '^ *[0-9]+/[0-9]+ +Test ' ctest.log || true)
           echo "eigen tests run: $n"
           [ "$n" -ge 20 ] || { echo "::error::only $n eigen tests ran; expected around 27"; exit 1; }
+
+      - name: show test logs on failure (mingw)
+        if: failure() && matrix.mingw
+        shell: msys2 {0}
+        run: |
+          for f in build/fem/tests/*/test-std*.log; do
+            [ -f "$f" ] || continue
+            echo "========================================================================"
+            echo "FILE: $f"
+            echo "========================================================================"
+            tail -n 200 "$f"
+          done
 
   refuses-the-old-options:
     name: -DEXTERNAL_ARPACK=OFF fails with an explanation

@@ -22,20 +22,40 @@ ENDIF()
 IF(NOT PARPACK_FOUND)
   MESSAGE(STATUS "Finding parpack libraries")
   # Try to find with CMake config file of upstream parpack.
-  FIND_PACKAGE(PARPACK CONFIG NAMES arpack arpackng arpack-ng parpack parpackng parpack-ng)
-  IF(PARPACK_FOUND)
-    GET_TARGET_PROPERTY(PARPACK_INCLUDE_DIR parpack INTERFACE_INCLUDE_DIRECTORIES)
-    # Most likely arpack and parpack are packed togeher (like in Arch linux)
-    # or they share the same include directory even in splitted packages (parpack-dev depends on arpack-dev)
-    # So in this point ARPACK_INCLUDE_DIR has to be defined or the information is loaded into the arpack
-    # interface
-    IF(NOT PARPACK_INCLUDE_DIR)
-      GET_TARGET_PROPERTY(PARPACK_INCLUDE_DIR arpack INTERFACE_INCLUDE_DIRECTORIES)
+  # Guard against broken upstream package configs (e.g. Debian/Ubuntu noble
+  # libparpack2-dev installs arpackng-config.cmake that unconditionally includes
+  # non-existent arpackngTargets.cmake, breaking find_package in CONFIG mode).
+  SET(_PARPACK_CONFIG_VALID TRUE)
+  FIND_FILE(_PARPACK_CONFIG_FILE
+    NAMES arpackng-config.cmake arpack-config.cmake parpack-config.cmake parpackng-config.cmake
+    PATH_SUFFIXES cmake/arpack-ng cmake/arpack cmake/parpack-ng cmake/parpack arpack-ng arpack parpack-ng parpack)
+  IF(_PARPACK_CONFIG_FILE)
+    GET_FILENAME_COMPONENT(_PARPACK_CONFIG_DIR "${_PARPACK_CONFIG_FILE}" DIRECTORY)
+    IF(NOT EXISTS "${_PARPACK_CONFIG_DIR}/arpackngTargets.cmake" AND
+       NOT EXISTS "${_PARPACK_CONFIG_DIR}/arpackng-targets.cmake" AND
+       NOT EXISTS "${_PARPACK_CONFIG_DIR}/parpackTargets.cmake" AND
+       NOT EXISTS "${_PARPACK_CONFIG_DIR}/parpack-targets.cmake")
+      SET(_PARPACK_CONFIG_VALID FALSE)
+      MESSAGE(STATUS "Upstream ${_PARPACK_CONFIG_FILE} is missing targets file; bypassing CONFIG mode")
     ENDIF()
-    GET_TARGET_PROPERTY(PARPACK_LIBRARIES parpack IMPORTED_LOCATION_RELEASE)
-    # Check if a debug build type was used
-    IF(NOT PARPACK_LIBRARIES)
-      GET_TARGET_PROPERTY(PARPACK_LIBRARIES parpack IMPORTED_LOCATION_DEBUG)
+  ENDIF()
+
+  IF(_PARPACK_CONFIG_VALID)
+    FIND_PACKAGE(PARPACK CONFIG NAMES arpack arpackng arpack-ng parpack parpackng parpack-ng)
+    IF(PARPACK_FOUND)
+      GET_TARGET_PROPERTY(PARPACK_INCLUDE_DIR parpack INTERFACE_INCLUDE_DIRECTORIES)
+      # Most likely arpack and parpack are packed togeher (like in Arch linux)
+      # or they share the same include directory even in splitted packages (parpack-dev depends on arpack-dev)
+      # So in this point ARPACK_INCLUDE_DIR has to be defined or the information is loaded into the arpack
+      # interface
+      IF(NOT PARPACK_INCLUDE_DIR)
+        GET_TARGET_PROPERTY(PARPACK_INCLUDE_DIR arpack INTERFACE_INCLUDE_DIRECTORIES)
+      ENDIF()
+      GET_TARGET_PROPERTY(PARPACK_LIBRARIES parpack IMPORTED_LOCATION_RELEASE)
+      # Check if a debug build type was used
+      IF(NOT PARPACK_LIBRARIES)
+        GET_TARGET_PROPERTY(PARPACK_LIBRARIES parpack IMPORTED_LOCATION_DEBUG)
+      ENDIF()
     ENDIF()
   ENDIF()
   # There is no parpack-config script or something went wrong with the script

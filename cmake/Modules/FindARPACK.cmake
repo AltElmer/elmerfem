@@ -23,13 +23,33 @@ ENDIF()
 IF(NOT ARPACK_FOUND)
   MESSAGE(STATUS "Finding arpack libraries")
   # Try to find with CMake config file of upstream arpack.
-  FIND_PACKAGE(ARPACK CONFIG NAMES arpack arpackng arpack-ng)
-  IF(ARPACK_FOUND)
-    GET_TARGET_PROPERTY(ARPACK_INCLUDE_DIR arpack INTERFACE_INCLUDE_DIRECTORIES)
-    GET_TARGET_PROPERTY(ARPACK_LIBRARIES arpack IMPORTED_LOCATION_RELEASE)
-    # Check if a debug build type was used
-    IF(NOT ARPACK_LIBRARIES)
-      GET_TARGET_PROPERTY(ARPACK_LIBRARIES arpack IMPORTED_LOCATION_DEBUG)
+  # Guard against broken upstream package configs (e.g. Debian/Ubuntu noble
+  # libparpack2-dev installs arpackng-config.cmake that unconditionally includes
+  # non-existent arpackngTargets.cmake, breaking find_package in CONFIG mode).
+  SET(_ARPACK_CONFIG_VALID TRUE)
+  FIND_FILE(_ARPACK_CONFIG_FILE
+    NAMES arpackng-config.cmake arpack-config.cmake
+    PATH_SUFFIXES cmake/arpack-ng cmake/arpack arpack-ng arpack)
+  IF(_ARPACK_CONFIG_FILE)
+    GET_FILENAME_COMPONENT(_ARPACK_CONFIG_DIR "${_ARPACK_CONFIG_FILE}" DIRECTORY)
+    IF(NOT EXISTS "${_ARPACK_CONFIG_DIR}/arpackngTargets.cmake" AND
+       NOT EXISTS "${_ARPACK_CONFIG_DIR}/arpackng-targets.cmake" AND
+       NOT EXISTS "${_ARPACK_CONFIG_DIR}/arpackTargets.cmake" AND
+       NOT EXISTS "${_ARPACK_CONFIG_DIR}/arpack-targets.cmake")
+      SET(_ARPACK_CONFIG_VALID FALSE)
+      MESSAGE(STATUS "Upstream ${_ARPACK_CONFIG_FILE} is missing targets file; bypassing CONFIG mode")
+    ENDIF()
+  ENDIF()
+
+  IF(_ARPACK_CONFIG_VALID)
+    FIND_PACKAGE(ARPACK CONFIG NAMES arpack arpackng arpack-ng)
+    IF(ARPACK_FOUND)
+      GET_TARGET_PROPERTY(ARPACK_INCLUDE_DIR arpack INTERFACE_INCLUDE_DIRECTORIES)
+      GET_TARGET_PROPERTY(ARPACK_LIBRARIES arpack IMPORTED_LOCATION_RELEASE)
+      # Check if a debug build type was used
+      IF(NOT ARPACK_LIBRARIES)
+        GET_TARGET_PROPERTY(ARPACK_LIBRARIES arpack IMPORTED_LOCATION_DEBUG)
+      ENDIF()
     ENDIF()
   ENDIF()
 
