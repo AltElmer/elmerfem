@@ -1369,6 +1369,7 @@ CONTAINS
 
     SUBROUTINE CheckKeyWord( Name,TYPE,CheckAbort,FreeNames,Section,ReturnType )
        USE HashTable
+       USE Lists, ONLY : StringToLowerCase
 
        CHARACTER(LEN=*) :: Name,TYPE,Section
        INTEGER :: CheckAbort
@@ -1451,8 +1452,11 @@ CONTAINS
 
              i = INDEX( str, ':' )
              j = INDEX( str, "'" )
-             IF ( i <= 0 .OR. j<= 0 ) CYCLE
-             str1 = str(1:i-1) // ':' //  str(j+1:LEN_TRIM(str)-1)
+             IF ( i <= 0 .OR. j <= 0 ) CYCLE
+             k = INDEX( str(j+1:), "'" )
+             IF ( k <= 0 ) CYCLE
+             str1 = str(1:i-1) // ':' //  str(j+1:j+k-1)
+             n = StringToLowerCase( str1, str1, .TRUE. )
 
              ALLOCATE( Val, STAT=istat )
 
@@ -1467,7 +1471,11 @@ CONTAINS
                 END IF
              END IF
 
-             Val % TYPE = str(i+1:j-3)
+             Val % TYPE = ADJUSTL(str(i+1:j-1))
+             n = INDEX(Val % TYPE, ':')
+             IF ( n > 0 ) Val % TYPE = Val % TYPE(1:n-1)
+             Val % TYPE = TRIM(ADJUSTL(Val % TYPE))
+             n = StringToLowerCase( Val % TYPE, Val % TYPE, .TRUE. )
 
              lstat = HashAdd( hash, str1, Val )
              IF ( .NOT. lstat ) THEN
@@ -1555,6 +1563,34 @@ CONTAINS
            j = j-2
            str(j:j) = '1'
            ReTry = .TRUE.
+         ELSE IF(j>7 .AND. str(j-4:j) == ' dofs') THEN
+           k = j - 5
+           IF(k>2) THEN
+             IF(str(k-1:k-1) == ' ' .AND. VERIFY( str(k:k),' 123456789') == 0 ) THEN
+               str = str(1:k-1) // ' 1 dofs'
+               ReTry = .TRUE.
+             ELSE IF(k>3 .AND. str(k-2:k-2) == ' ' .AND. VERIFY( str(k-1:k),' 0123456789') == 0 ) THEN
+               str = str(1:k-2) // ' 1 dofs'
+               ReTry = .TRUE.
+             ELSE IF(k>4 .AND. str(k-3:k-3) == ' ' .AND. VERIFY( str(k-2:k),' 0123456789') == 0 ) THEN
+               str = str(1:k-3) // ' 1 dofs'
+               ReTry = .TRUE.
+             END IF
+           END IF
+         ELSE IF(j>9 .AND. str(j-6:j) == ' output') THEN
+           k = j - 7
+           IF(k>2) THEN
+             IF(str(k-1:k-1) == ' ' .AND. VERIFY( str(k:k),' 123456789') == 0 ) THEN
+               str = str(1:k-1) // ' 1 output'
+               ReTry = .TRUE.
+             ELSE IF(k>3 .AND. str(k-2:k-2) == ' ' .AND. VERIFY( str(k-1:k),' 0123456789') == 0 ) THEN
+               str = str(1:k-2) // ' 1 output'
+               ReTry = .TRUE.
+             ELSE IF(k>4 .AND. str(k-3:k-3) == ' ' .AND. VERIFY( str(k-2:k),' 0123456789') == 0 ) THEN
+               str = str(1:k-3) // ' 1 output'
+               ReTry = .TRUE.
+             END IF
+           END IF
          END IF
          IF( ReTry ) THEN
            Val => HashValue( Hash, str )
@@ -1635,7 +1671,7 @@ CONTAINS
 !------------------------------------------------------------------------------
     RECURSIVE SUBROUTINE SectionContents( Model,List, CheckAbort,FreeNames, &
               Section, InFileUnit, ScanOnly, Echo )
-!------------------------------------------------------------------------------
+      USE Lists, ONLY : StringToLowerCase
       TYPE(ValueList_t), POINTER :: List,ll
       INTEGER :: InFileUnit,CheckAbort
       TYPE(Model_t) :: Model
@@ -1717,6 +1753,7 @@ CONTAINS
             j = i
           END DO
           Keyword=str(1:j)
+          n = StringToLowerCase( Keyword, Keyword, .TRUE. )
           str_beg = j+2
 
           SELECT CASE(Keyword)

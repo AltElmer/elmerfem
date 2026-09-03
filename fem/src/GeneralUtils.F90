@@ -1026,6 +1026,11 @@ CONTAINS
      ValueStarts = 0
      InsideQuotes  = .FALSE.
 
+     DO k = 1, ninlen
+       IF ( ICHAR(readstr(k:k)) == 13 ) readstr(k:k) = ' '
+     END DO
+     ninlen = LEN_TRIM(readstr(1:ninlen))
+
      i = INDEX( readstr(1:ninlen), '!' )
      IF ( i>0 ) ninlen=i-1
 
@@ -1041,6 +1046,7 @@ CONTAINS
             READ( Unit,'(A)',END=10,ERR=10 ) readstr(i+1:MAXLEN)
           END IF
           DO j=LEN(readstr),i+1,-1
+             IF ( ICHAR(readstr(j:j)) == 13 ) readstr(j:j) = ' '
              IF ( readstr(j:j) /= ' ' ) EXIT
           END DO
           inlen = inlen + j-i
