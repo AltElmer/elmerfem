@@ -172,7 +172,13 @@ jobs:
 
       - name: exclude build output from Windows Defender scanning
         shell: pwsh
-        run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
+        run: |
+          try {
+            Add-MpPreference -ExclusionPath "${{ github.workspace }}" -ErrorAction Stop
+          } catch {
+            Write-Warning "Unable to configure Windows Defender exclusion: $_"
+          }
+        continue-on-error: true
 
       - name: build
         run: |
