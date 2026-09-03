@@ -1563,6 +1563,34 @@ CONTAINS
            j = j-2
            str(j:j) = '1'
            ReTry = .TRUE.
+         ELSE IF(j>7 .AND. str(j-4:j) == ' dofs') THEN
+           k = j - 5
+           IF(k>2) THEN
+             IF(str(k-1:k-1) == ' ' .AND. VERIFY( str(k:k),' 123456789') == 0 ) THEN
+               str = str(1:k-1) // ' 1 dofs'
+               ReTry = .TRUE.
+             ELSE IF(k>3 .AND. str(k-2:k-2) == ' ' .AND. VERIFY( str(k-1:k),' 0123456789') == 0 ) THEN
+               str = str(1:k-2) // ' 1 dofs'
+               ReTry = .TRUE.
+             ELSE IF(k>4 .AND. str(k-3:k-3) == ' ' .AND. VERIFY( str(k-2:k),' 0123456789') == 0 ) THEN
+               str = str(1:k-3) // ' 1 dofs'
+               ReTry = .TRUE.
+             END IF
+           END IF
+         ELSE IF(j>9 .AND. str(j-6:j) == ' output') THEN
+           k = j - 7
+           IF(k>2) THEN
+             IF(str(k-1:k-1) == ' ' .AND. VERIFY( str(k:k),' 123456789') == 0 ) THEN
+               str = str(1:k-1) // ' 1 output'
+               ReTry = .TRUE.
+             ELSE IF(k>3 .AND. str(k-2:k-2) == ' ' .AND. VERIFY( str(k-1:k),' 0123456789') == 0 ) THEN
+               str = str(1:k-2) // ' 1 output'
+               ReTry = .TRUE.
+             ELSE IF(k>4 .AND. str(k-3:k-3) == ' ' .AND. VERIFY( str(k-2:k),' 0123456789') == 0 ) THEN
+               str = str(1:k-3) // ' 1 output'
+               ReTry = .TRUE.
+             END IF
+           END IF
          END IF
          IF( ReTry ) THEN
            Val => HashValue( Hash, str )
