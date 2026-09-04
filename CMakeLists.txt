@@ -100,7 +100,7 @@ SET(WITH_ELMERGUILOGGER FALSE CACHE BOOL "Include ElmerGUI logger")
 SET(ELMER_INSTALL_LIB_DIR "lib/elmersolver" CACHE PATH "Location of elmer shared libraries relative to prefix.")
 SET(WITH_Trilinos FALSE CACHE BOOL "Use Trilinos")
 SET(WITH_FETI4I FALSE CACHE BOOL "Use FETI4I")
-SET(WITH_ELMERPOST FALSE CACHE BOOL "Include ElmerPost (DEPRECATED)")
+SET(WITH_ELMERPOST FALSE CACHE BOOL "Include ElmerPost")
 SET(WITH_CONTRIB FALSE CACHE BOOL "Include contributed solvers")
 
 SET(WITH_LUA FALSE CACHE BOOL "Include LUA extensions.")
@@ -114,8 +114,6 @@ SET(INCLUDE_ELMER_MODULES "" CACHE STRING "Semicolon separated list of solver mo
 
 # Let user select if the contiguous attribute is used or not
 SET(USE_CONTIGUOUS FALSE CACHE BOOL "Use contiguous attribute")
-
-MARK_AS_ADVANCED(WITH_ELMERPOST)
 
 # if("${CMAKE_VERSION}" VERSION_GREATER 2.8.12)
 #   CMAKE_POLICY(SET CMP0022 OLD)
@@ -857,7 +855,7 @@ IF(WITH_ELMERGUILOGGER)
 ENDIF(WITH_ELMERGUILOGGER)
 
 IF(WITH_ELMERPOST)
-  MESSAGE(WARNING "  Building ElmerPost")
+  MESSAGE(STATUS "  Building ElmerPost")
   MESSAGE(STATUS "------------------------------------------------")
   # post/ is a submodule, so it can be absent from a clone that did not ask
   # for it. Say so, rather than letting ADD_SUBDIRECTORY fail with "does not

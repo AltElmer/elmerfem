@@ -89,6 +89,8 @@ jobs:
             nsis:p
             parpack:p
             ntldd:p
+            tcl:p
+            tk:p
 
       # ── 3. Install Microsoft MPI ──────────────────────────────────────
       - name: Install Microsoft MPI
@@ -120,6 +122,7 @@ jobs:
             -DMumps_INCLUDE_DIR="$(pkg-config --variable=includedir mumps-dmo);$(pkg-config --variable=includedir mumps-zmo);$(pkg-config --variable=includedir mumps-smo);$(pkg-config --variable=includedir mumps-cmo)" \
             -DWITH_ElmerIce=ON \
             -DWITH_ELMERGUI=ON \
+            -DWITH_ELMERPOST=ON \
             -DWITH_QT6=ON \
             -DWITH_VTK=ON \
             -DWITH_OCC=ON \
