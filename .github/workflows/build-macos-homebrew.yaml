@@ -28,20 +28,9 @@ jobs:
         os: [macos-14]
         openmp: [without]
         gui: [with]
-        # Building with OpenMP causes some test failures on macOS on Apple
-        # Silicon.
-        # The affected tests currently are: H1BasisEvaluation and
-        # SD_H1BasisEvaluation.
-        # For the time being, disable building with OpenMP in CI on Apple
-        # Silicon.
-        # OpenMP is also needed as a transitional build dependency of the
-        # SuiteSparse package from Homebrew.
-        # FIXME: Consider building with OpenMP again when this (potentially
-        # upstream) issue has been fixed.
+        # Test both full GUI (without OpenMP on macos-14) and
+        # headless solver (with OpenMP on macos-15) on Apple Silicon.
         include:
-          # Homebrew ended Intel support in September 2026 (moved to Tier 3
-          # with no bottles), and GitHub Actions is retiring Intel runners.
-          # Move to Apple Silicon (macos-15) for testing OpenMP.
           - os: macos-15
             openmp: with
             gui: without
